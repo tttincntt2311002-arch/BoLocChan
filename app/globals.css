@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; }
+button, input, textarea { font: inherit; }
+::selection { background: #d9f5a2; color: #182016; }
+
+.badge-art { position: relative; isolation: isolate; overflow: hidden; }
+.badge-art::before, .badge-art::after { content: ""; position: absolute; z-index: -1; border-radius: 9999px; }
+.badge-art::before { width: 68%; aspect-ratio: 1; top: -29%; right: -13%; background: rgba(255,255,255,.17); }
+.badge-art::after { width: 53%; aspect-ratio: 1; bottom: -25%; left: -12%; border: 1px solid rgba(255,255,255,.24); }
+.badge-ring { box-shadow: 0 0 0 1px rgba(255,255,255,.5), 0 0 0 8px rgba(255,255,255,.12); }
