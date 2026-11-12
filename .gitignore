@@ -1,0 +1,86 @@
+# ============================================================
+# SBT Certificate System – Root .gitignore
+# ============================================================
+
+# ───────── SECRETS & CREDENTIALS (NEVER COMMIT) ─────────────
+.env
+.env.local
+.env.production
+.env.staging
+*.pem
+*.key
+*.secret
+**/secrets/
+*private*
+*secret*
+
+# ───────── BLOCKCHAIN / HARDHAT ─────────────────────────────
+blockchain/node_modules/
+blockchain/artifacts/
+blockchain/cache/
+blockchain/typechain-types/
+blockchain/.env
+blockchain/deployments/localhost/
+
+# Private keys (extra safety)
+blockchain/**/*.json.secret
+**/keystore/
+
+# ───────── FRONTEND ─────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+frontend/.env.production
+
+# Vite
+frontend/.vite/
+
+# ───────── BACKEND ───────────────────────────────────────────
+backend/.env
+backend/venv/
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/**/*.pyo
+backend/**/*.pyd
+
+# SQLite databases (real data)
+backend/*.db
+backend/**/*.db
+backend/app/db/*.db
+
+# Alembic versions (keep structure, ignore generated)
+# backend/migrations/versions/*.py  # Uncomment nếu muốn ignore
+
+# ───────── OS & EDITOR ───────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# ───────── LOGS & TEMP ───────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tmp
+*.temp
+/tmp/
+
+# ───────── COVERAGE & TESTS ──────────────────────────────────
+coverage/
+.nyc_output/
+htmlcov/
+.pytest_cache/
+.coverage
+
+# ───────── DOCS BUILD ────────────────────────────────────────
+docs/_build/
+docs/site/

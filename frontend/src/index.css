@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Global base styles ────────────────────────────────────────────────────── */
+@layer base {
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply bg-blockchain-dark text-gray-100 font-sans antialiased;
+  }
+
+  h1 { @apply text-3xl font-bold; }
+  h2 { @apply text-2xl font-semibold; }
+  h3 { @apply text-xl font-semibold; }
+}
+
+/* ── Reusable component classes ────────────────────────────────────────────── */
+@layer components {
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium
+           transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2
+           focus:ring-offset-blockchain-dark disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply btn bg-primary-600 hover:bg-primary-500 text-white focus:ring-primary-500;
+  }
+
+  .btn-secondary {
+    @apply btn bg-gray-700 hover:bg-gray-600 text-gray-100 focus:ring-gray-500;
+  }
+
+  .btn-danger {
+    @apply btn bg-blockchain-danger hover:bg-red-600 text-white focus:ring-red-500;
+  }
+
+  .btn-outline {
+    @apply btn border border-primary-500 text-primary-400 hover:bg-primary-500/10 focus:ring-primary-500;
+  }
+
+  /* Cards */
+  .card {
+    @apply bg-gray-800/60 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6
+           shadow-lg shadow-black/20;
+  }
+
+  .card-hover {
+    @apply card hover:border-primary-500/50 hover:shadow-primary-500/10 transition-all duration-200;
+  }
+
+  /* Badges */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-issued   { @apply badge bg-blockchain-success/20 text-blockchain-success; }
+  .badge-pending  { @apply badge bg-blockchain-warning/20 text-blockchain-warning; }
+  .badge-revoked  { @apply badge bg-blockchain-danger/20  text-blockchain-danger;  }
+  .badge-minting  { @apply badge bg-primary-500/20 text-primary-400; }
+
+  /* Form inputs */
+  .input {
+    @apply w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100
+           placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500
+           focus:border-transparent transition-colors duration-200;
+  }
+
+  /* Address display */
+  .wallet-address {
+    @apply font-mono text-sm text-gray-400 truncate;
+  }
+
+  /* Section container */
+  .container-main {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+}
+
+/* ── Utility overrides ─────────────────────────────────────────────────────── */
+@layer utilities {
+  .text-gradient {
+    @apply bg-gradient-to-r from-primary-400 to-blockchain-accent bg-clip-text text-transparent;
+  }
+
+  .bg-grid {
+    background-image: linear-gradient(rgba(99, 102, 241, 0.05) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(99, 102, 241, 0.05) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+}
