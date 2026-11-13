@@ -24,5 +24,10 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: { ethers: ['ethers'], vendor: ['react', 'react-dom', 'react-router-dom', 'zustand', 'axios'] },
+      },
+    },
   },
 })

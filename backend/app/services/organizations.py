@@ -1,10 +1,35 @@
 """Organization ownership and membership boundaries."""
 
+import base64
+import io
+
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy.orm import Session
 
 from app.core.errors import fail
 from app.models.models import MemberRole, Organization, OrganizationMember, User, UserRole
 from app.services.common import audit, get_or_404, membership, require_global_organizer, require_org_manager
+
+
+def set_logo(db, user, org, content):
+    require_org_manager(db, org, user)
+    if len(content) > 1_048_576:
+        fail(413, "logo_too_large", "Logo must be at most 1 MB")
+    try:
+        with Image.open(io.BytesIO(content)) as image:
+            if image.format not in ("PNG", "JPEG") or image.width * image.height > 4_000_000:
+                fail(422, "invalid_logo", "Use a PNG or JPEG logo with at most 4 million pixels")
+            image.thumbnail((256, 256))
+            clean = Image.new("RGBA", image.size)
+            clean.paste(image.convert("RGBA"))
+            buffer = io.BytesIO()
+            clean.save(buffer, format="PNG")
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+        fail(422, "invalid_logo", "Logo is not a valid PNG or JPEG image")
+    org.logo_data_url = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+    audit(db, user, "organization.logo_updated", org)
+    db.commit()
+    return org
 
 
 def create(db: Session, user: User, payload):

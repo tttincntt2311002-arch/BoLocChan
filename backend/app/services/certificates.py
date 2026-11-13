@@ -1,5 +1,8 @@
 """Certificate lifecycle. Database constraints prevent duplicate issuance."""
 
+from datetime import timedelta
+
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -20,9 +23,10 @@ from app.models.models import (
     UserRole,
     utcnow,
 )
-from app.schemas.schemas import PublicCertificate
-from app.services.blockchain import BlockchainVerifier
+from app.schemas.schemas import CertificateConfirmation, PublicCertificate
+from app.services.blockchain import BlockchainVerifier, rpc_quantity
 from app.services.common import audit, can_manage_event, get_or_404, require_event_manager
+from app.services.history import record_history
 
 
 def visible_certificates(user: User):
@@ -79,6 +83,7 @@ def prepare(db: Session, actor: User, payload) -> Certificate:
         event_id=event.id,
         recipient_id=recipient.id,
         recipient_wallet=recipient.wallet_address,
+        recipient_name=recipient.full_name,
         chain_id=settings.CHAIN_ID,
         contract_address=contract,
         token_uri=payload.token_uri,
@@ -106,10 +111,24 @@ def authorize_change(db: Session, actor: User, certificate: Certificate):
 
 def submit_transaction(db: Session, actor: User, certificate: Certificate, tx_hash: str):
     authorize_change(db, actor, certificate)
+    if certificate.tx_hash == tx_hash:
+        return certificate
     if certificate.status != CertificateStatus.PENDING:
         fail(409, "invalid_transition", "Only pending certificates accept transactions")
     if certificate.tx_hash and certificate.tx_hash != tx_hash:
-        fail(409, "transaction_exists", "A transaction is already attached; fail and retry before replacing it")
+        verifier = BlockchainVerifier()
+        verifier.check_chain(certificate)
+        original = verifier.rpc("eth_getTransactionByHash", [certificate.tx_hash])
+        replacement = verifier.rpc("eth_getTransactionByHash", [tx_hash])
+        if not original or not replacement:
+            fail(409, "transaction_exists", "Replacement must have the same sender and nonce")
+        try:
+            same_sender = normalize_address(original["from"]) == normalize_address(replacement["from"])
+            same_nonce = rpc_quantity(original["nonce"]) == rpc_quantity(replacement["nonce"])
+        except (KeyError, TypeError, ValueError):
+            fail(502, "invalid_transaction", "RPC returned malformed transaction data")
+        if not same_sender or not same_nonce:
+            fail(409, "transaction_exists", "Replacement must have the same sender and nonce")
     certificate.tx_hash = tx_hash
     audit(db, actor, "certificate.transaction_submitted", certificate)
     db.commit()
@@ -118,9 +137,19 @@ def submit_transaction(db: Session, actor: User, certificate: Certificate, tx_ha
 
 def confirm(db: Session, actor: User, certificate: Certificate, payload):
     authorize_change(db, actor, certificate)
+    if (
+        certificate.status == CertificateStatus.ISSUED
+        and certificate.tx_hash == payload.tx_hash
+        and certificate.token_id == payload.token_id
+    ):
+        return certificate
+    return accept_confirmation(db, actor, certificate, payload)
+
+
+def accept_confirmation(db: Session, actor: User | None, certificate: Certificate, payload, *, recovered=False):
     if certificate.status != CertificateStatus.PENDING:
         fail(409, "invalid_transition", "Only pending certificates can be confirmed")
-    if certificate.tx_hash and certificate.tx_hash != payload.tx_hash:
+    if not recovered and certificate.tx_hash and certificate.tx_hash != payload.tx_hash:
         fail(409, "transaction_mismatch", "Hash differs from the recorded pending transaction")
     verifier = BlockchainVerifier()
     result = verifier.confirm(certificate, payload.token_id, payload.tx_hash)
@@ -132,7 +161,18 @@ def confirm(db: Session, actor: User, certificate: Certificate, payload):
     certificate.contract_address = result["contract_address"]
     certificate.block_number = result["block_number"]
     certificate.status = CertificateStatus.ISSUED
-    certificate.issued_at = utcnow()
+    certificate.issued_at = result["issued_at"]
+    certificate.mint_attempt_id = None
+    certificate.mint_started_at = None
+    record_history(
+        db,
+        certificate,
+        "issued",
+        tx_hash=payload.tx_hash,
+        block_number=result["block_number"],
+        transaction_time=result["issued_at"],
+        actor_address=result.get("actor_address"),
+    )
     audit(db, actor, "certificate.issued", certificate)
     db.commit()
     return certificate
@@ -142,6 +182,8 @@ def mark_failed(db: Session, actor: User, certificate: Certificate, reason: str)
     authorize_change(db, actor, certificate)
     if certificate.status != CertificateStatus.PENDING:
         fail(409, "invalid_transition", "Only pending certificates can be marked failed")
+    if certificate.tx_hash or certificate.mint_attempt_id:
+        fail(409, "sync_required", "A mint attempt exists; synchronize its blockchain outcome first")
     certificate.status = CertificateStatus.FAILED
     certificate.failure_reason = reason
     audit(db, actor, "certificate.failed", certificate)
@@ -159,7 +201,8 @@ def retry(db: Session, actor: User, certificate: Certificate):
         )
     )
     if (
-        participant.status != AttendanceStatus.ATTENDED
+        not participant
+        or participant.status != AttendanceStatus.ATTENDED
         or not certificate.recipient.is_active
         or certificate.event.status in (EventStatus.DRAFT, EventStatus.CANCELLED)
     ):
@@ -167,8 +210,139 @@ def retry(db: Session, actor: User, certificate: Certificate):
     certificate.status = CertificateStatus.PENDING
     certificate.failure_reason = None
     certificate.tx_hash = None
+    certificate.mint_attempt_id = None
+    certificate.mint_started_at = None
     audit(db, actor, "certificate.retried", certificate)
     db.commit()
+    return certificate
+
+
+def claim_mint(db: Session, actor: User, certificate: Certificate, attempt_id: str):
+    authorize_change(db, actor, certificate)
+    if certificate.status != CertificateStatus.PENDING or certificate.tx_hash:
+        fail(409, "sync_required", "Synchronize the existing transaction before minting")
+    if certificate.mint_attempt_id == attempt_id:
+        return certificate
+    if certificate.mint_attempt_id:
+        if certificate.mint_started_at > utcnow() - timedelta(minutes=10):
+            fail(409, "mint_in_progress", "Another browser is already processing this certificate")
+        # Recover a lost hash before allowing an expired attempt to be replaced.
+        reconcile(db, certificate, actor)
+        if certificate.status != CertificateStatus.PENDING or certificate.tx_hash:
+            fail(409, "sync_required", "An existing transaction was recovered; reload its status")
+    verifier = BlockchainVerifier()
+    verifier.check_chain(certificate)
+    try:
+        latest = rpc_quantity(verifier.rpc("eth_blockNumber", []))
+    except ValueError:
+        fail(502, "invalid_receipt", "RPC returned an invalid block height")
+    if certificate.mint_attempt_id and certificate.sync_from_block < latest - verifier.settings.MIN_CONFIRMATIONS:
+        fail(409, "sync_required", "Continue scanning old mint logs before replacing this attempt")
+    certificate.sync_from_block = latest
+    certificate.mint_attempt_id = attempt_id
+    certificate.mint_started_at = utcnow()
+    audit(db, actor, "certificate.mint_claimed", certificate)
+    db.commit()
+    return certificate
+
+
+def release_mint(db: Session, actor: User, certificate: Certificate, attempt_id: str):
+    """Only the attempt that received a definite pre-broadcast rejection releases."""
+    authorize_change(db, actor, certificate)
+    if certificate.tx_hash or certificate.status != CertificateStatus.PENDING:
+        fail(409, "sync_required", "A submitted transaction must be synchronized")
+    if certificate.mint_attempt_id != attempt_id:
+        fail(409, "mint_attempt_mismatch", "Mint attempt changed in another browser")
+    certificate.mint_attempt_id = None
+    certificate.mint_started_at = None
+    audit(db, actor, "certificate.mint_released", certificate)
+    db.commit()
+    return certificate
+
+
+def reconcile(db: Session, certificate: Certificate, actor: User | None = None):
+    """Read-only RPC recovery. Never sign transactions or trust browser statuses."""
+    if certificate.revocation_tx_hash:
+        return reconcile_revocation(db, certificate, actor)
+    if certificate.status != CertificateStatus.PENDING:
+        return certificate
+    verifier = BlockchainVerifier()
+    verifier.check_chain(certificate)
+    tx_hash = certificate.tx_hash
+    receipt = verifier.rpc("eth_getTransactionReceipt", [tx_hash]) if tx_hash else None
+    if receipt is None:
+        tx_hash, cursor = verifier.find_transaction(certificate)
+        certificate.sync_from_block = cursor
+        if not tx_hash:
+            db.commit()
+            return certificate
+        receipt = verifier.rpc("eth_getTransactionReceipt", [tx_hash])
+    if receipt is None:
+        return certificate
+    evidence = verifier.receipt_evidence(receipt, tx_hash)
+    token_id = None
+    failure = "Transaction reverted on blockchain"
+    if evidence["status"] == 1:
+        try:
+            token_id = verifier.matching_token(certificate, receipt)
+        except HTTPException as exc:
+            if exc.detail.get("code") != "mint_log_mismatch":
+                raise
+            failure = "Confirmed transaction contains no matching mint (cancelled or replaced)"
+    if token_id is None:
+        certificate.status = CertificateStatus.FAILED
+        certificate.failure_reason = failure
+        certificate.tx_hash = tx_hash
+        certificate.mint_attempt_id = None
+        certificate.mint_started_at = None
+        audit(db, actor, "certificate.failed_onchain", certificate)
+        db.commit()
+        return certificate
+    # Do not pin a recovered hash until the entire receipt has been verified.
+    return accept_confirmation(
+        db, actor, certificate, CertificateConfirmation(token_id=token_id, tx_hash=tx_hash), recovered=True
+    )
+
+
+def submit_revocation(db, actor, certificate, tx_hash):
+    authorize_change(db, actor, certificate)
+    if certificate.status not in (CertificateStatus.ISSUED, CertificateStatus.REVOKED):
+        fail(409, "invalid_transition", "Only confirmed certificates can be revoked")
+    if certificate.revocation_tx_hash and certificate.revocation_tx_hash != tx_hash:
+        fail(409, "transaction_exists", "Another revocation transaction must be synchronized first")
+    certificate.revocation_tx_hash = tx_hash
+    audit(db, actor, "certificate.revocation_submitted", certificate, tx_hash=tx_hash)
+    db.commit()
+    return certificate
+
+
+def reconcile_revocation(db, certificate, actor=None):
+    from app.services.verification import verify_token
+
+    verifier = BlockchainVerifier()
+    verifier.check_chain(certificate)
+    receipt = verifier.rpc("eth_getTransactionReceipt", [certificate.revocation_tx_hash])
+    if receipt is None:
+        return certificate
+    proof = verifier.receipt_evidence(receipt, certificate.revocation_tx_hash)
+    state = verifier.read_state(certificate.token_id)
+    if proof["status"] == 0 or not state["revoked"]:
+        record_history(
+            db,
+            certificate,
+            "revocation_failed",
+            tx_hash=certificate.revocation_tx_hash,
+            block_number=proof["block_number"],
+            transaction_time=proof.get("transaction_time"),
+            actor_address=receipt.get("from"),
+        )
+        certificate.revocation_tx_hash = None
+        audit(db, actor, "certificate.revocation_failed", certificate)
+        db.commit()
+        return certificate
+    result = verify_token(db, certificate.chain_id, certificate.contract_address, certificate.token_id, certificate)
+    if result["status"] != "REVOKED":
+        fail(409, "revocation_unverified", result["message"])
     return certificate
 
 
@@ -180,6 +354,7 @@ def revoke(db: Session, actor: User, certificate: Certificate, reason: str):
     certificate.revoked_at = utcnow()
     certificate.revoked_by_id = actor.id
     certificate.revoke_reason = reason
+    record_history(db, certificate, "revoked", source="registry", transaction_time=certificate.revoked_at, actor=actor)
     audit(db, actor, "certificate.revoked", certificate)
     db.commit()
     return certificate

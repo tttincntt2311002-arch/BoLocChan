@@ -14,8 +14,12 @@ with tempfile.TemporaryDirectory(prefix="sbt-auth-browser-") as directory:
         "SECRET_KEY": secrets.token_urlsafe(48),
         "DATABASE_URL": "sqlite:///" + (Path(directory) / "browser.db").as_posix(),
         "CORS_ORIGINS": "http://127.0.0.1:5178",
-        "WEB3_PROVIDER_URL": "",
-        "SBT_CONTRACT_ADDRESS": "",
+        "PUBLIC_FRONTEND_URL": "http://127.0.0.1:5178",
+        "WEB3_PROVIDER_URL": "http://127.0.0.1:18545",
+        "SBT_CONTRACT_ADDRESS": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+        "CHAIN_ID": "31337",
+        "MIN_CONFIRMATIONS": "1",
+        "SYNC_ENABLED": "false",
         "PINATA_JWT": "",
     })
     from app.db.migrate import upgrade

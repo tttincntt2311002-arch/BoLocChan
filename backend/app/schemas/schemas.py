@@ -1,7 +1,7 @@
 """Strict input schemas and explicit public/private response projections."""
 
 from datetime import datetime
-from typing import Annotated, Generic, TypeVar
+from typing import Annotated, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, field_validator, model_validator
 
@@ -115,6 +115,7 @@ class OrganizationResponse(Output):
     name: str
     slug: str
     description: str | None
+    logo_data_url: str | None = None
     owner_id: str
     created_at: datetime
     updated_at: datetime
@@ -196,6 +197,11 @@ class ParticipantResponse(Output):
     updated_at: datetime
 
 
+class ParticipantDetail(ParticipantResponse):
+    full_name: str
+    wallet_address: str | None
+
+
 class CSVImportResult(BaseModel):
     imported: int
     participants: list[ParticipantResponse]
@@ -224,6 +230,10 @@ class CertificateFailure(Input):
     reason: str = Field(min_length=3, max_length=500)
 
 
+class MintAttempt(Input):
+    attempt_id: Identifier
+
+
 class CertificateRevoke(Input):
     reason: str = Field(min_length=3, max_length=500)
 
@@ -233,6 +243,7 @@ class CertificateResponse(Output):
     event_id: str
     recipient_id: str
     recipient_wallet: str
+    recipient_name: str | None
     chain_id: int
     token_id: str | None
     token_uri: str | None
@@ -244,6 +255,10 @@ class CertificateResponse(Output):
     revoked_at: datetime | None
     revoke_reason: str | None
     failure_reason: str | None
+    mint_attempt_id: str | None
+    mint_started_at: datetime | None
+    sync_from_block: int | None
+    revocation_tx_hash: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -268,6 +283,61 @@ class VerificationResult(BaseModel):
     source: str = "database"
     certificate: PublicCertificate
     message: str
+
+
+class CertificateHistoryResponse(Output):
+    id: str
+    action: str
+    source: str
+    tx_hash: str | None
+    block_number: int | None
+    transaction_time: datetime | None
+    actor_name: str | None
+    actor_address: str | None
+    created_at: datetime
+
+
+class ChainHistoryEntry(BaseModel):
+    action: str
+    source: str = "blockchain"
+    tx_hash: str | None
+    block_number: int | None
+    transaction_time: datetime | None
+    actor_address: str | None
+
+
+class BlockchainVerificationResult(BaseModel):
+    status: Literal["VALID", "REVOKED", "INVALID", "NOT FOUND"]
+    is_valid: bool = False
+    on_chain_verified: bool = False
+    chain_id: int
+    contract_address: str
+    token_id: str
+    message: str
+    checks: dict[str, bool | None] = Field(default_factory=dict)
+    owner_address: str | None = None
+    metadata_uri: str | None = None
+    event_name: str | None = None
+    organization_name: str | None = None
+    issued_at: datetime | None = None
+    history: list[ChainHistoryEntry] = Field(default_factory=list)
+
+
+class CertificateDocument(BaseModel):
+    id: str
+    recipient_name: str
+    event_name: str
+    event_start_date: datetime
+    event_end_date: datetime
+    organization_name: str
+    organization_logo: str | None
+    chain_id: int
+    contract_address: str
+    token_id: str
+    issued_at: datetime
+    tx_hash: str
+    status: CertificateStatus
+    verification_url: str
 
 
 class AuditResponse(Output):

@@ -9,11 +9,20 @@ from app.api.dependencies import DB
 from app.core.errors import fail
 from app.core.validation import Address, Identifier, TokenId
 from app.models.models import Certificate
-from app.schemas.schemas import VerificationResult
+from app.schemas.schemas import BlockchainVerificationResult, VerificationResult
 from app.services import certificates
 from app.services.common import get_or_404
+from app.services.verification import verify_token
 
 router = APIRouter()
+
+
+@router.get("/blockchain", response_model=BlockchainVerificationResult)
+def blockchain(
+    db: DB, chain_id: Annotated[int, Query(gt=0, le=2**63 - 1)], contract_address: Address, token_id: TokenId
+):
+    """Verify chain state and mint/revocation receipts, even without a SQLite row."""
+    return verify_token(db, chain_id, contract_address, token_id)
 
 
 @router.get("/certificate/{certificate_id}", response_model=VerificationResult)

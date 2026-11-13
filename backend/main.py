@@ -1,7 +1,8 @@
 """FastAPI application factory; schema changes are managed only by Alembic."""
 
+import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -16,6 +17,7 @@ from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.db.base import get_engine
 from app.db.migrate import assert_schema_current
+from app.services.sync import recovery_loop
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +36,16 @@ def create_app():
     @asynccontextmanager
     async def lifespan(application):
         assert_schema_current()
-        yield
+        recovery = None
+        if settings.SYNC_ENABLED and settings.WEB3_PROVIDER_URL and settings.SBT_CONTRACT_ADDRESS:
+            recovery = asyncio.create_task(recovery_loop())
+        try:
+            yield
+        finally:
+            if recovery:
+                recovery.cancel()
+                with suppress(asyncio.CancelledError):
+                    await recovery
 
     application = FastAPI(
         title=settings.APP_NAME,
@@ -90,6 +101,17 @@ def create_app():
         return error(500, "internal_error", "An unexpected error occurred")
 
     application.include_router(api_router, prefix="/api/v1")
+
+    @application.get("/api/v1/blockchain/config", tags=["Blockchain"])
+    def blockchain_config():
+        return {
+            "chain_id": settings.CHAIN_ID,
+            "contract_address": settings.SBT_CONTRACT_ADDRESS,
+            "min_confirmations": settings.MIN_CONFIRMATIONS,
+            "deployment_block": settings.SBT_DEPLOYMENT_BLOCK,
+            "configured": bool(settings.WEB3_PROVIDER_URL and settings.SBT_CONTRACT_ADDRESS),
+            "metadata_upload_enabled": bool(settings.PINATA_JWT),
+        }
 
     @application.get("/health", tags=["Health"])
     def health():

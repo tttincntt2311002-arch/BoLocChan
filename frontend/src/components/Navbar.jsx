@@ -5,7 +5,6 @@ import { Link, NavLink } from 'react-router-dom'
 import { clsx } from 'clsx'
 import useWalletStore from '@/hooks/useWalletStore'
 import { formatAddress } from '@/utils/web3'
-import { APP_CONFIG } from '@/utils/constants'
 
 const NAV_LINKS = [
   { to: '/',            label: 'Trang chủ' },

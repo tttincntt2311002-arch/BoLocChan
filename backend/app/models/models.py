@@ -126,6 +126,7 @@ class Organization(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(200))
     slug: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     description: Mapped[str | None] = mapped_column(Text)
+    logo_data_url: Mapped[str | None] = mapped_column(Text)
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
     owner: Mapped[User] = relationship()
     members: Mapped[list["OrganizationMember"]] = relationship(back_populates="organization")
@@ -197,6 +198,7 @@ class Certificate(TimestampMixin, Base):
     event_id: Mapped[str] = mapped_column(ForeignKey("events.id", ondelete="RESTRICT"), index=True)
     recipient_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
     recipient_wallet: Mapped[str] = mapped_column(String(42))
+    recipient_name: Mapped[str | None] = mapped_column(String(150))
     chain_id: Mapped[int] = mapped_column(Integer)
     # Decimal text preserves the full Ethereum uint256 range in SQLite and JSON.
     token_id: Mapped[str | None] = mapped_column(String(78))
@@ -212,6 +214,10 @@ class Certificate(TimestampMixin, Base):
     revoked_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     revoke_reason: Mapped[str | None] = mapped_column(String(500))
     failure_reason: Mapped[str | None] = mapped_column(String(500))
+    mint_attempt_id: Mapped[str | None] = mapped_column(String(36))
+    mint_started_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    sync_from_block: Mapped[int | None] = mapped_column(Integer)
+    revocation_tx_hash: Mapped[str | None] = mapped_column(String(66))
     event: Mapped[Event] = relationship(back_populates="certificates", foreign_keys=[event_id])
     recipient: Mapped[User] = relationship(back_populates="certificates", foreign_keys=[recipient_id])
 
@@ -224,3 +230,19 @@ class AuditLog(IdentityMixin, Base):
     entity_id: Mapped[str] = mapped_column(String(36), index=True)
     details: Mapped[dict] = mapped_column(JSON, default=dict)
     actor: Mapped[User | None] = relationship()
+
+
+class CertificateHistory(IdentityMixin, Base):
+    __tablename__ = "certificate_history"
+    __table_args__ = (
+        UniqueConstraint("certificate_id", "action", "source", "tx_hash", name="uq_certificate_history_transaction"),
+    )
+    certificate_id: Mapped[str] = mapped_column(ForeignKey("certificates.id", ondelete="RESTRICT"), index=True)
+    action: Mapped[str] = mapped_column(String(30))
+    source: Mapped[str] = mapped_column(String(20))
+    tx_hash: Mapped[str | None] = mapped_column(String(66))
+    block_number: Mapped[int | None] = mapped_column(Integer)
+    transaction_time: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    actor_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    actor_name: Mapped[str | None] = mapped_column(String(150))
+    actor_address: Mapped[str | None] = mapped_column(String(42))

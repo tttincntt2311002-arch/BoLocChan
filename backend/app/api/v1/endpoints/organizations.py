@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Response
+from typing import Annotated
+
+from fastapi import APIRouter, File, Response, UploadFile
 from sqlalchemy import select
 
 from app.api.dependencies import DB, CurrentUser, Limit, Skip
@@ -15,7 +17,7 @@ from app.schemas.schemas import (
     Page,
 )
 from app.services import organizations
-from app.services.common import get_or_404, membership, page
+from app.services.common import get_or_404, membership, page, require_org_manager
 
 router = APIRouter()
 
@@ -26,8 +28,16 @@ def create(payload: OrganizationCreate, user: CurrentUser, db: DB):
 
 
 @router.get("", response_model=Page[OrganizationResponse])
-def list_organizations(user: CurrentUser, db: DB, skip: Skip = 0, limit: Limit = 20):
-    return page(db, select(Organization).order_by(Organization.name, Organization.id), skip, limit)
+def list_organizations(user: CurrentUser, db: DB, skip: Skip = 0, limit: Limit = 20, managed_only: bool = False):
+    stmt = select(Organization)
+    if managed_only and user.role != UserRole.ADMIN:
+        member_orgs = select(OrganizationMember.organization_id).where(
+            OrganizationMember.user_id == user.id, OrganizationMember.role == "organizer"
+        )
+        stmt = stmt.where((Organization.owner_id == user.id) | Organization.id.in_(member_orgs))
+        if user.role != UserRole.ORGANIZER:
+            stmt = stmt.where(False)
+    return page(db, stmt.order_by(Organization.name, Organization.id), skip, limit)
 
 
 @router.get("/{organization_id}", response_model=OrganizationResponse)
@@ -38,6 +48,13 @@ def get(organization_id: Identifier, user: CurrentUser, db: DB):
 @router.patch("/{organization_id}", response_model=OrganizationResponse)
 def update(organization_id: Identifier, payload: OrganizationUpdate, user: CurrentUser, db: DB):
     return organizations.update(db, user, get_or_404(db, Organization, organization_id), payload)
+
+
+@router.put("/{organization_id}/logo", response_model=OrganizationResponse)
+def logo(organization_id: Identifier, user: CurrentUser, db: DB, file: Annotated[UploadFile, File()]):
+    org = get_or_404(db, Organization, organization_id)
+    require_org_manager(db, org, user)
+    return organizations.set_logo(db, user, org, file.file.read(1_048_577))
 
 
 @router.get("/{organization_id}/members", response_model=Page[MemberResponse])

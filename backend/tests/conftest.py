@@ -35,6 +35,7 @@ def ctx(tmp_path, monkeypatch, password_hash):
     monkeypatch.setenv("SBT_CONTRACT_ADDRESS", CONTRACT)
     monkeypatch.setenv("WEB3_PROVIDER_URL", "http://configured-rpc.invalid")
     monkeypatch.setenv("PINATA_JWT", "")
+    monkeypatch.setenv("SYNC_ENABLED", "false")
     monkeypatch.setenv("CORS_ORIGINS", "http://localhost:5173")
     get_engine.cache_clear()
     get_settings.cache_clear()
@@ -149,6 +150,7 @@ def rpc_mock(monkeypatch):
         event_id = event_id or certificate["event_id"]
         uri = certificate["token_uri"]
         receipt = {
+            "to": CONTRACT,
             "transactionHash": TX,
             "status": receipt_status,
             "blockNumber": "0x64",

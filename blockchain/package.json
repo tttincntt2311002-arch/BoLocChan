@@ -19,7 +19,7 @@
     "node": "hardhat node",
     "clean": "hardhat clean",
     "export-abi": "node scripts/exportAbi.js",
-    "lint": "solhint contracts/**/*.sol"
+    "lint": "solhint --disc \"contracts/**/*.sol\""
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "2.1.2",

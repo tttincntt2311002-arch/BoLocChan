@@ -19,11 +19,15 @@ def get_or_404(db: Session, model, entity_id: str):
     return entity
 
 
-def audit(db: Session, actor: User, action: str, entity, **details):
+def audit(db: Session, actor: User | None, action: str, entity, **details):
     db.flush()
     db.add(
         AuditLog(
-            actor_id=actor.id, action=action, entity_type=entity.__tablename__, entity_id=entity.id, details=details
+            actor_id=actor.id if actor else None,
+            action=action,
+            entity_type=entity.__tablename__,
+            entity_id=entity.id,
+            details=details,
         )
     )
 

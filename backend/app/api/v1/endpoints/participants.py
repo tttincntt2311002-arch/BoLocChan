@@ -7,7 +7,14 @@ from app.api.dependencies import DB, CurrentUser, Limit, Skip
 from app.core.config import get_settings
 from app.core.validation import Identifier
 from app.models.models import AttendanceStatus, Event, Participant, User
-from app.schemas.schemas import AttendanceUpdate, CSVImportResult, Page, ParticipantCreate, ParticipantResponse
+from app.schemas.schemas import (
+    AttendanceUpdate,
+    CSVImportResult,
+    Page,
+    ParticipantCreate,
+    ParticipantDetail,
+    ParticipantResponse,
+)
 from app.services import events, participants
 from app.services.common import can_manage_event, get_or_404, page, require_event_manager
 
@@ -27,7 +34,7 @@ def add(event_id: Identifier, payload: ParticipantCreate, user: CurrentUser, db:
     return participants.add(db, user, event, get_or_404(db, User, payload.user_id))
 
 
-@router.get("/{event_id}/participants", response_model=Page[ParticipantResponse])
+@router.get("/{event_id}/participants", response_model=Page[ParticipantDetail])
 def list_participants(
     event_id: Identifier,
     user: CurrentUser,
@@ -42,7 +49,16 @@ def list_participants(
         stmt = stmt.where(Participant.user_id == user.id)
     if status:
         stmt = stmt.where(Participant.status == status)
-    return page(db, stmt.order_by(Participant.created_at, Participant.id), skip, limit)
+    result = page(db, stmt.order_by(Participant.created_at, Participant.id), skip, limit)
+    result["items"] = [
+        {
+            **ParticipantResponse.model_validate(p).model_dump(),
+            "full_name": p.user.full_name,
+            "wallet_address": p.user.wallet_address,
+        }
+        for p in result["items"]
+    ]
+    return result
 
 
 @router.post("/{event_id}/participants/import", response_model=CSVImportResult, status_code=201)

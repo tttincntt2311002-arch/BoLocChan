@@ -4,6 +4,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, model_validator
@@ -18,16 +19,33 @@ class Settings(BaseModel):
     SECRET_KEY: str = Field(min_length=32)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=60, ge=1, le=1440)
     CORS_ORIGINS: str = "http://localhost:5173"
+    PUBLIC_FRONTEND_URL: str = "http://localhost:5173"
     WEB3_PROVIDER_URL: str = ""
     CHAIN_ID: int = Field(default=11155111, gt=0, le=2**63 - 1)
     SBT_CONTRACT_ADDRESS: str = ""
     MIN_CONFIRMATIONS: int = Field(default=2, ge=1)
+    SBT_DEPLOYMENT_BLOCK: int = Field(default=0, ge=0)
+    SYNC_INTERVAL_SECONDS: int = Field(default=15, ge=1)
+    SYNC_ENABLED: bool = True
+    SYNC_BLOCK_RANGE: int = Field(default=1000, ge=1, le=5000)
     PINATA_JWT: str = ""
     MAX_CSV_BYTES: int = Field(default=1_048_576, ge=1024)
     MAX_CSV_ROWS: int = Field(default=1000, ge=1, le=10000)
 
     @model_validator(mode="after")
     def validate_security(self):
+        public = urlsplit(self.PUBLIC_FRONTEND_URL)
+        if (
+            public.scheme not in ("http", "https")
+            or not public.netloc
+            or public.username
+            or public.password
+            or public.query
+            or public.fragment
+            or public.path not in ("", "/")
+        ):
+            raise ValueError("PUBLIC_FRONTEND_URL must be an http(s) origin without credentials, path or query")
+        self.PUBLIC_FRONTEND_URL = self.PUBLIC_FRONTEND_URL.rstrip("/")
         if not self.DATABASE_URL.startswith("sqlite:///"):
             raise ValueError("This application requires SQLite")
         if not self.cors_origins_list or any(

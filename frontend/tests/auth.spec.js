@@ -3,6 +3,10 @@ import { test, expect } from '@playwright/test'
 const API = 'http://127.0.0.1:8011/api/v1'
 const PASSWORD = 'DemoSBT2026!'
 
+test.beforeEach(async ({ page }) => {
+  await page.route('https://fonts.googleapis.com/**', (route) => route.abort())
+})
+
 async function signIn(page, email = 'admin@example.com', password = PASSWORD) {
   await page.goto('/login')
   await page.getByLabel('Email', { exact: true }).fill(email)
@@ -10,122 +14,214 @@ async function signIn(page, email = 'admin@example.com', password = PASSWORD) {
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click()
 }
 
-test('private routes redirect to login and reject incorrect credentials', async ({ page }) => {
+test('private routes redirect to login and reject incorrect credentials', async ({
+  page,
+}) => {
   await page.goto('/dashboard')
   await expect(page).toHaveURL(/\/login$/)
   await page.getByLabel('Email', { exact: true }).fill('admin@example.com')
   await page.getByLabel('Mật khẩu', { exact: true }).fill('WrongPassword2026!')
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click()
-  await expect(page.getByRole('alert')).toContainText('Email hoặc mật khẩu không đúng')
-  expect(await page.evaluate(() => localStorage.getItem('sbt_access_token'))).toBeNull()
+  await expect(page.getByRole('alert')).toContainText(
+    'Email hoặc mật khẩu không đúng',
+  )
+  expect(
+    await page.evaluate(() => localStorage.getItem('sbt_access_token')),
+  ).toBeNull()
 })
 
-test('admin signs in, sees real identity, and keeps the session after reload', async ({ page }) => {
+test('admin signs in, sees real identity, and keeps the session after reload', async ({
+  page,
+}) => {
   await signIn(page)
   await expect(page).toHaveURL(/\/dashboard$/)
-  await expect(page.getByRole('heading', { name: 'Xin chào, Demo Admin', exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: 'Xin chào, Demo Admin', exact: true }),
+  ).toBeVisible()
   await expect(page.locator('.user-card')).toContainText('Quản trị viên')
   await expect(page.locator('.user-card')).not.toContainText('Minh Le')
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'Xin chào, Demo Admin', exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: 'Xin chào, Demo Admin', exact: true }),
+  ).toBeVisible()
   await page.getByRole('link', { name: 'Cài đặt hồ sơ', exact: true }).click()
-  await expect(page.getByLabel('Họ và tên', { exact: true })).toHaveValue('Demo Admin')
-  await expect(page.getByLabel('Email', { exact: true })).toHaveValue('admin@example.com')
-  await expect(page.getByLabel('Vai trò', { exact: true })).toHaveValue('Quản trị viên')
-  await expect(page.getByLabel('Vai trò', { exact: true })).toHaveAttribute('readonly', '')
+  await expect(page.getByLabel('Họ và tên', { exact: true })).toHaveValue(
+    'Demo Admin',
+  )
+  await expect(page.getByLabel('Email', { exact: true })).toHaveValue(
+    'admin@example.com',
+  )
+  await expect(page.getByLabel('Vai trò', { exact: true })).toHaveValue(
+    'Quản trị viên',
+  )
+  await expect(page.getByLabel('Vai trò', { exact: true })).toHaveAttribute(
+    'readonly',
+    '',
+  )
 })
 
-test('logout clears browser credentials and revokes the actual backend token', async ({ page, request }) => {
+test('logout clears browser credentials and revokes the actual backend token', async ({
+  page,
+  request,
+}) => {
   await signIn(page)
   await expect(page).toHaveURL(/\/dashboard$/)
-  const token = await page.evaluate(() => localStorage.getItem('sbt_access_token'))
+  const token = await page.evaluate(() =>
+    localStorage.getItem('sbt_access_token'),
+  )
   await page.getByRole('button', { name: 'Đăng xuất', exact: true }).click()
   await expect(page).toHaveURL(/\/login$/)
-  expect(await page.evaluate(() => localStorage.getItem('sbt_access_token'))).toBeNull()
-  const response = await request.get(API + '/auth/me', { headers: { Authorization: 'Bearer ' + token } })
+  expect(
+    await page.evaluate(() => localStorage.getItem('sbt_access_token')),
+  ).toBeNull()
+  const response = await request.get(API + '/auth/me', {
+    headers: { Authorization: 'Bearer ' + token },
+  })
   expect(response.status()).toBe(401)
   await page.goto('/dashboard')
   await expect(page).toHaveURL(/\/login$/)
 })
 
-test('participants cannot open management routes or trust a persisted admin role', async ({ page }) => {
+test('participants cannot open management routes or trust a persisted admin role', async ({
+  page,
+}) => {
   await signIn(page, 'participant@example.com')
   await expect(page).toHaveURL(/\/my-certificates$/)
-  await page.evaluate(() => localStorage.setItem('sbt-wallet-store', JSON.stringify({
-    state: { user: { full_name: 'Fake Admin', role: 'admin' } }, version: 0,
-  })))
+  await page.evaluate(() =>
+    localStorage.setItem(
+      'sbt-wallet-store',
+      JSON.stringify({
+        state: { user: { full_name: 'Fake Admin', role: 'admin' } },
+        version: 0,
+      }),
+    ),
+  )
   await page.reload()
   await expect(page.locator('.user-card')).toContainText('Người tham gia')
-  await expect(page.getByRole('link', { name: 'Tổng quan', exact: true })).toHaveCount(0)
+  await expect(
+    page.getByRole('link', { name: 'Tổng quan', exact: true }),
+  ).toHaveCount(0)
   await page.goto('/dashboard')
   await expect(page).toHaveURL(/\/my-certificates$/)
   await page.goto('/events/new')
   await expect(page).toHaveURL(/\/my-certificates$/)
   await page.goto('/events')
-  await expect(page.getByRole('button', { name: 'Tạo sự kiện', exact: true })).toHaveCount(0)
+  await expect(
+    page.getByRole('button', { name: 'Tạo sự kiện', exact: true }),
+  ).toHaveCount(0)
 })
 
-test('invalid persisted tokens are removed instead of opening a private page', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('sbt_access_token', 'invalid.jwt.token'))
+test('invalid persisted tokens are removed instead of opening a private page', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem('sbt_access_token', 'invalid.jwt.token'),
+  )
   await page.goto('/dashboard')
   await expect(page).toHaveURL(/\/login$/)
-  expect(await page.evaluate(() => localStorage.getItem('sbt_access_token'))).toBeNull()
-  await expect(page.getByRole('heading', { name: 'Chào mừng trở lại' })).toBeVisible()
+  expect(
+    await page.evaluate(() => localStorage.getItem('sbt_access_token')),
+  ).toBeNull()
+  await expect(
+    page.getByRole('heading', { name: 'Chào mừng trở lại' }),
+  ).toBeVisible()
 })
 
-test('registration creates a real participant and supports profile updates', async ({ page, request }) => {
+test('registration creates a real participant and supports profile updates', async ({
+  page,
+  request,
+}) => {
   const email = 'browser-' + Date.now() + '@example.com'
   await page.goto('/register')
-  await page.getByLabel('Họ và tên', { exact: true }).fill('Browser Participant')
+  await page
+    .getByLabel('Họ và tên', { exact: true })
+    .fill('Browser Participant')
   await page.getByLabel('Email', { exact: true }).fill(email)
-  await page.getByLabel('Mật khẩu', { exact: true }).fill('BrowserPassword2026!')
+  await page
+    .getByLabel('Mật khẩu', { exact: true })
+    .fill('BrowserPassword2026!')
   await page.getByRole('button', { name: 'Tạo tài khoản', exact: true }).click()
   await expect(page).toHaveURL(/\/login$/)
   await expect(page.getByLabel('Email', { exact: true })).toHaveValue(email)
-  await page.getByLabel('Mật khẩu', { exact: true }).fill('BrowserPassword2026!')
+  await page
+    .getByLabel('Mật khẩu', { exact: true })
+    .fill('BrowserPassword2026!')
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click()
   await expect(page).toHaveURL(/\/my-certificates$/)
   await page.goto('/profile')
-  await page.getByLabel('Họ và tên', { exact: true }).fill('Updated Browser Name')
+  await page
+    .getByLabel('Họ và tên', { exact: true })
+    .fill('Updated Browser Name')
   await page.getByRole('button', { name: 'Lưu thay đổi', exact: true }).click()
   await expect(page.locator('.user-card')).toContainText('Updated Browser Name')
   await page.reload()
-  await expect(page.getByLabel('Họ và tên', { exact: true })).toHaveValue('Updated Browser Name')
-  const token = await page.evaluate(() => localStorage.getItem('sbt_access_token'))
-  const response = await request.get(API + '/auth/me', { headers: { Authorization: 'Bearer ' + token } })
+  await expect(page.getByLabel('Họ và tên', { exact: true })).toHaveValue(
+    'Updated Browser Name',
+  )
+  const token = await page.evaluate(() =>
+    localStorage.getItem('sbt_access_token'),
+  )
+  const response = await request.get(API + '/auth/me', {
+    headers: { Authorization: 'Bearer ' + token },
+  })
   expect((await response.json()).role).toBe('participant')
 })
 
-test('temporary backend failure retains the token and allows session retry', async ({ page }) => {
+test('temporary backend failure retains the token and allows session retry', async ({
+  page,
+}) => {
   await signIn(page)
   await expect(page).toHaveURL(/\/dashboard$/)
-  const token = await page.evaluate(() => localStorage.getItem('sbt_access_token'))
-  await page.route('**/auth/me', route => route.abort('connectionfailed'))
+  const token = await page.evaluate(() =>
+    localStorage.getItem('sbt_access_token'),
+  )
+  await page.route('**/auth/me', (route) => route.abort('connectionfailed'))
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'Chưa kết nối được máy chủ' })).toBeVisible()
-  expect(await page.evaluate(() => localStorage.getItem('sbt_access_token'))).toBe(token)
+  await expect(
+    page.getByRole('heading', { name: 'Chưa kết nối được máy chủ' }),
+  ).toBeVisible()
+  expect(
+    await page.evaluate(() => localStorage.getItem('sbt_access_token')),
+  ).toBe(token)
   await page.unroute('**/auth/me')
   await page.getByRole('button', { name: 'Thử lại', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Xin chào, Demo Admin', exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: 'Xin chào, Demo Admin', exact: true }),
+  ).toBeVisible()
 })
 
-test('logout is synchronized across browser tabs', async ({ page, context }) => {
+test('logout is synchronized across browser tabs', async ({
+  page,
+  context,
+}) => {
   await signIn(page)
   await expect(page).toHaveURL(/\/dashboard$/)
   const second = await context.newPage()
   await second.goto('/profile')
-  await expect(second.getByRole('heading', { name: 'Hồ sơ cá nhân', exact: true })).toBeVisible()
+  await expect(
+    second.getByRole('heading', { name: 'Hồ sơ cá nhân', exact: true }),
+  ).toBeVisible()
   await page.getByRole('button', { name: 'Đăng xuất', exact: true }).click()
   await expect(page).toHaveURL(/\/login$/)
   await expect(second).toHaveURL(/\/login$/)
 })
 
-test('verification stays public and password recovery does not pretend to send mail', async ({ page }) => {
+test('verification stays public and password recovery does not pretend to send mail', async ({
+  page,
+}) => {
   await page.goto('/verify')
-  await expect(page.getByRole('heading', { name: 'Tra cứu chứng nhận', exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: 'Tra cứu chứng nhận', exact: true }),
+  ).toBeVisible()
   await page.goto('/forgot-password')
-  await expect(page.getByText('Liên hệ quản trị viên để được hỗ trợ khôi phục quyền truy cập.')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Gửi liên kết' })).toHaveCount(0)
+  await expect(
+    page.getByText(
+      'Liên hệ quản trị viên để được hỗ trợ khôi phục quyền truy cập.',
+    ),
+  ).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Gửi liên kết' })).toHaveCount(
+    0,
+  )
 })
 
 test('logout stays reachable in the mobile navigation', async ({ page }) => {
@@ -135,4 +231,114 @@ test('logout stays reachable in the mobile navigation', async ({ page }) => {
   await page.getByRole('button', { name: 'Mở menu', exact: true }).click()
   await page.getByRole('button', { name: 'Đăng xuất', exact: true }).click()
   await expect(page).toHaveURL(/\/login$/)
+})
+
+for (const operation of ['logout', 'profile', 'wallet']) {
+  test(`a delayed ${operation} response cannot overwrite a newer login`, async ({
+    page,
+    request,
+  }) => {
+    await signIn(page)
+    await expect(page).toHaveURL(/\/dashboard$/)
+    const oldToken = await page.evaluate(() =>
+      localStorage.getItem('sbt_access_token'),
+    )
+    const oldUser = await (
+      await request.get(API + '/auth/me', {
+        headers: { Authorization: 'Bearer ' + oldToken },
+      })
+    ).json()
+    let release, started
+    const gate = new Promise((resolve) => {
+      release = resolve
+    })
+    const requestStarted = new Promise((resolve) => {
+      started = resolve
+    })
+    const endpoint =
+      operation === 'logout'
+        ? '**/auth/logout'
+        : operation === 'profile'
+          ? '**/users/me'
+          : '**/users/me/wallet'
+    await page.route(endpoint, async (route) => {
+      started()
+      await gate
+      if (operation === 'logout') await route.fulfill({ status: 204 })
+      else
+        await route.fulfill({
+          json: { ...oldUser, full_name: 'Stale Admin Response' },
+        })
+    })
+    await page.evaluate(async (operation) => {
+      const { default: auth } = await import('/src/hooks/useAuthStore.js')
+      window.pendingOldSession =
+        operation === 'logout'
+          ? auth.getState().logout()
+          : operation === 'profile'
+            ? auth.getState().updateProfile({ full_name: 'Old update' })
+            : auth.getState().updateWallet('0x' + '9'.repeat(40))
+    }, operation)
+    await requestStarted
+    await page.evaluate(async () => {
+      const { default: auth } = await import('/src/hooks/useAuthStore.js')
+      await auth.getState().login('participant@example.com', 'DemoSBT2026!')
+    })
+    const newToken = await page.evaluate(() =>
+      localStorage.getItem('sbt_access_token'),
+    )
+    release()
+    await page.evaluate(() => window.pendingOldSession)
+    await expect(page.locator('.user-card')).toContainText('Người tham gia')
+    await expect(page.locator('.user-card')).not.toContainText(
+      'Stale Admin Response',
+    )
+    expect(
+      await page.evaluate(() => localStorage.getItem('sbt_access_token')),
+    ).toBe(newToken)
+  })
+}
+
+test('editing the verification input discards a delayed result for the old token', async ({
+  page,
+}) => {
+  await page.goto('/verify')
+  await page.evaluate(async () => {
+    const { default: api } = await import('/src/utils/api.js')
+    const original = api.get.bind(api)
+    api.get = (path, config) =>
+      path.startsWith('/verify/')
+        ? new Promise((resolve) => {
+            window.finishVerification = resolve
+          })
+        : original(path, config)
+  })
+  await page.getByLabel('Token ID', { exact: true }).fill('37')
+  await page
+    .getByRole('button', { name: 'Xác minh chứng nhận', exact: true })
+    .click()
+  await page.getByLabel('Token ID', { exact: true }).fill('38')
+  await page.evaluate(async () => {
+    window.finishVerification({
+      data: {
+        is_valid: true,
+        on_chain_verified: true,
+        certificate: {
+          event_name: 'Old token result',
+          organization_name: 'Test',
+          status: 'issued',
+          token_id: '37',
+          issued_at: '2026-11-13T00:00:00Z',
+          tx_hash: null,
+        },
+      },
+    })
+    await new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve)),
+    )
+  })
+  await expect(
+    page.getByText('Old token result', { exact: false }),
+  ).toHaveCount(0)
+  await expect(page.getByLabel('Token ID', { exact: true })).toHaveValue('38')
 })

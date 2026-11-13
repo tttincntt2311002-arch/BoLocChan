@@ -1,11 +1,12 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Response
+from sqlalchemy import select
 
 from app.api.dependencies import DB, CurrentUser, Limit, Skip
 from app.core.errors import fail
 from app.core.validation import Identifier, UTCDate
-from app.models.models import Event, EventStatus
+from app.models.models import Event, EventStatus, MemberRole, Organization, OrganizationMember, UserRole
 from app.schemas.schemas import EventCreate, EventResponse, EventUpdate, Page
 from app.services import events
 from app.services.common import get_or_404, page
@@ -29,10 +30,24 @@ def list_events(
     organization_id: Identifier | None = None,
     start_from: UTCDate | None = None,
     start_to: UTCDate | None = None,
+    managed_only: bool = False,
 ):
     if start_from and start_to and start_to < start_from:
         fail(422, "invalid_dates", "start_to must not be before start_from")
     stmt = events.visible_events(user)
+    if managed_only and user.role != UserRole.ADMIN:
+        organizations = (
+            select(Organization.id)
+            .where(Organization.owner_id == user.id)
+            .union(
+                select(OrganizationMember.organization_id).where(
+                    OrganizationMember.user_id == user.id, OrganizationMember.role == MemberRole.ORGANIZER
+                )
+            )
+        )
+        stmt = stmt.where(Event.organization_id.in_(organizations))
+        if user.role != UserRole.ORGANIZER:
+            stmt = stmt.where(False)
     if q:
         stmt = stmt.where(Event.name.icontains(q, autoescape=True))
     if status:

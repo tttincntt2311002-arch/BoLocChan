@@ -2,7 +2,6 @@
  * Home Page – landing / hero section
  */
 import { Link } from 'react-router-dom'
-import { APP_CONFIG } from '@/utils/constants'
 
 export default function HomePage() {
   return (
