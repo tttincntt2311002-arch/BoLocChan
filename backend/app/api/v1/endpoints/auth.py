@@ -1,47 +1,41 @@
-"""
-Authentication endpoints – MetaMask wallet-based sign-in (Sign-In with Ethereum)
-"""
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+"""Password login accepts JSON or the standard Swagger OAuth2 form."""
 
-from app.db.base import get_db
-from app.schemas.schemas import NonceRequest, NonceResponse, SignatureVerifyRequest, TokenResponse
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Response
+from fastapi.security import OAuth2PasswordRequestForm
+
+from app.api.dependencies import DB, CurrentUser
+from app.schemas.schemas import LoginRequest, TokenResponse, UserCreate, UserResponse
+from app.services import auth
 
 router = APIRouter()
 
 
-@router.post("/nonce", response_model=NonceResponse, summary="Get nonce for wallet sign-in")
-async def get_nonce(payload: NonceRequest, db: Session = Depends(get_db)):
-    """
-    Returns a unique nonce for the given wallet address.
-    The frontend must sign this nonce with MetaMask and send the
-    signature to /auth/verify to obtain a JWT token.
-
-    Business logic will be implemented in a later phase.
-    """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Authentication not yet implemented – scaffold only",
-    )
+@router.post("/register", response_model=UserResponse, status_code=201)
+def register(payload: UserCreate, db: DB):
+    """Public signup always creates a Participant; role fields are rejected."""
+    return auth.register(db, payload)
 
 
-@router.post("/verify", response_model=TokenResponse, summary="Verify MetaMask signature")
-async def verify_signature(payload: SignatureVerifyRequest, db: Session = Depends(get_db)):
-    """
-    Verifies the MetaMask signature against the stored nonce.
-    Returns a JWT access token on success.
-
-    Business logic will be implemented in a later phase.
-    """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Authentication not yet implemented – scaffold only",
-    )
+@router.post("/login", response_model=TokenResponse)
+def login(payload: LoginRequest, db: DB):
+    return auth.login(db, str(payload.email), payload.password)
 
 
-@router.post("/refresh", summary="Refresh access token")
-async def refresh_token():
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Token refresh not yet implemented – scaffold only",
-    )
+@router.post("/token", response_model=TokenResponse)
+def token(form: Annotated[OAuth2PasswordRequestForm, Depends()], db: DB):
+    """Use the email address in the OAuth2 username field."""
+    return auth.login(db, form.username, form.password)
+
+
+@router.get("/me", response_model=UserResponse)
+def me(user: CurrentUser):
+    return user
+
+
+@router.post("/logout", status_code=204)
+def logout(user: CurrentUser, db: DB):
+    """Revokes this account's existing tokens. Client must also remove its token."""
+    auth.logout(db, user)
+    return Response(status_code=204)

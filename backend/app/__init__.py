@@ -1,1 +1,1 @@
-# ── __init__.py files ─────────────────────────────────────────────────────────
+"""SBT Certificate System backend."""

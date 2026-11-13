@@ -1,56 +1,110 @@
-"""
-SBT Certificate System – FastAPI Application Entry Point
-"""
-from fastapi import FastAPI
+"""FastAPI application factory; schema changes are managed only by Alembic."""
+
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.orm.exc import StaleDataError
+from starlette.exceptions import HTTPException
 
-from app.core.config import settings
 from app.api.v1.router import api_router
-from app.db.base import Base, engine
+from app.core.config import get_settings
+from app.db.base import get_engine
+from app.db.migrate import assert_schema_current
 
-# ── Create all tables on startup ──────────────────────────────────────────────
-Base.metadata.create_all(bind=engine)
-
-# ── App instance ──────────────────────────────────────────────────────────────
-app = FastAPI(
-    title=settings.APP_NAME,
-    version="1.0.0",
-    description=(
-        "REST API for SBT Certificate System – "
-        "Soulbound Token Certificate Issuance & Verification"
-    ),
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
-)
-
-# ── CORS ──────────────────────────────────────────────────────────────────────
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# ── Routers ───────────────────────────────────────────────────────────────────
-app.include_router(api_router, prefix="/api/v1")
+logger = logging.getLogger(__name__)
 
 
-# ── Health check ──────────────────────────────────────────────────────────────
-@app.get("/health", tags=["Health"])
-async def health_check():
-    return {
-        "status": "healthy",
-        "app": settings.APP_NAME,
-        "environment": settings.APP_ENV,
-    }
+def error(status, code, message, details=None, headers=None):
+    return JSONResponse(
+        status_code=status,
+        content={"error": {"code": code, "message": message, "details": details}},
+        headers=headers,
+    )
 
 
-@app.get("/", tags=["Root"])
-async def root():
-    return {
-        "message": "SBT Certificate System API",
-        "docs": "/docs",
-        "health": "/health",
-    }
+def create_app():
+    settings = get_settings()
+
+    @asynccontextmanager
+    async def lifespan(application):
+        assert_schema_current()
+        yield
+
+    application = FastAPI(
+        title=settings.APP_NAME,
+        version="2.0.0",
+        lifespan=lifespan,
+        description="SBT certificate registry. Authenticate with email/password. Public verification exposes only certificate and issuer information.",
+    )
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins_list,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+        max_age=600,
+    )
+
+    @application.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @application.exception_handler(HTTPException)
+    async def http_error(request, exc):
+        if isinstance(exc.detail, dict):
+            detail = exc.detail
+            return error(exc.status_code, detail["code"], detail["message"], detail.get("details"), exc.headers)
+        return error(exc.status_code, "http_error", str(exc.detail), headers=exc.headers)
+
+    @application.exception_handler(RequestValidationError)
+    async def validation_error(request, exc):
+        details = [
+            {"field": ".".join(str(v) for v in e["loc"]), "message": e["msg"], "type": e["type"]} for e in exc.errors()
+        ]
+        return error(422, "validation_error", "Request validation failed", details)
+
+    @application.exception_handler(IntegrityError)
+    async def integrity_error(request, exc):
+        return error(409, "data_conflict", "Operation conflicts with an existing record or a database constraint")
+
+    @application.exception_handler(StaleDataError)
+    async def stale_error(request, exc):
+        return error(409, "concurrent_update", "Record changed during this request; reload before retrying")
+
+    @application.exception_handler(OperationalError)
+    async def database_error(request, exc):
+        return error(503, "database_unavailable", "Database is temporarily unavailable")
+
+    @application.exception_handler(Exception)
+    async def unexpected_error(request, exc):
+        logger.error("Unhandled exception: %s", type(exc).__name__)
+        return error(500, "internal_error", "An unexpected error occurred")
+
+    application.include_router(api_router, prefix="/api/v1")
+
+    @application.get("/health", tags=["Health"])
+    def health():
+        try:
+            with get_engine().connect() as connection:
+                connection.execute(text("SELECT 1"))
+            return {"status": "healthy", "app": settings.APP_NAME, "environment": settings.APP_ENV}
+        except OperationalError:
+            return error(503, "database_unavailable", "Database is unavailable")
+
+    @application.get("/", tags=["Health"])
+    def root():
+        return {"message": settings.APP_NAME, "docs": "/docs", "health": "/health"}
+
+    return application
+
+
+app = create_app()

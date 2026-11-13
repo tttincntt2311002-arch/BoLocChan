@@ -1,33 +1,14 @@
-"""
-IPFS utility endpoints – upload metadata/images for certificate NFTs
-"""
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter
+
+from app.api.dependencies import CurrentUser
+from app.schemas.schemas import IPFSResponse, MetadataInput
+from app.services.common import require_global_organizer
+from app.services.ipfs import upload_metadata
 
 router = APIRouter()
 
 
-@router.post("/upload/metadata", summary="Upload certificate metadata to IPFS")
-async def upload_metadata(metadata: dict):
-    """
-    Uploads ERC-721 compliant metadata JSON to IPFS via configured pinning service.
-    Returns the IPFS CID.
-    """
-    raise HTTPException(status_code=501, detail="Not yet implemented – scaffold only")
-
-
-@router.post("/upload/image", summary="Upload certificate image to IPFS")
-async def upload_image(file: UploadFile = File(...)):
-    """
-    Uploads a certificate image (PNG/SVG) to IPFS.
-    Returns the IPFS CID.
-    """
-    raise HTTPException(status_code=501, detail="Not yet implemented – scaffold only")
-
-
-@router.get("/metadata/{cid}", summary="Fetch metadata from IPFS")
-async def get_metadata(cid: str):
-    """
-    Retrieves and returns certificate metadata from IPFS by CID.
-    Uses the configured IPFS gateway.
-    """
-    raise HTTPException(status_code=501, detail="Not yet implemented – scaffold only")
+@router.post("/upload/metadata", response_model=IPFSResponse, status_code=201)
+def metadata(payload: MetadataInput, user: CurrentUser):
+    require_global_organizer(user)
+    return upload_metadata(payload.model_dump())

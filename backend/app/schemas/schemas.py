@@ -1,168 +1,292 @@
-"""
-Pydantic schemas for request/response validation
-"""
-from __future__ import annotations
+"""Strict input schemas and explicit public/private response projections."""
 
 from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel, Field, field_validator
+from typing import Annotated, Generic, TypeVar
 
-from app.models.models import UserRole, EventStatus, CertificateStatus
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, field_validator, model_validator
 
+from app.core.validation import Address, Identifier, IPFSUri, Password, TokenId, TxHash, UTCDate
+from app.models.models import AttendanceStatus, CertificateStatus, EventStatus, MemberRole, UserRole
 
-# ── User Schemas ─────────────────────────────────────────────────────────────
-class UserBase(BaseModel):
-    wallet_address: str = Field(..., pattern=r"^0x[a-fA-F0-9]{40}$")
-    username: Optional[str] = None
-    email: Optional[str] = None
+Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=150)]
+T = TypeVar("T")
 
 
-class UserCreate(UserBase):
-    pass
+class Input(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def reject_explicit_nulls(self):
+        # Nullable fields may be cleared; all other patch fields reject explicit null.
+        nullable = {"description", "location", "wallet_address"}
+        for name in self.model_fields_set:
+            if getattr(self, name) is None and name not in nullable:
+                raise ValueError(f"{name} cannot be null")
+        return self
 
 
-class UserResponse(UserBase):
+class Output(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+
+class Page(BaseModel, Generic[T]):
+    items: list[T]
+    total: int
+    skip: int
+    limit: int
+
+
+class ErrorDetail(BaseModel):
+    code: str
+    message: str
+    details: list[dict] | None = None
+
+
+class ErrorResponse(BaseModel):
+    error: ErrorDetail
+
+
+class UserCreate(Input):
+    email: EmailStr
+    full_name: Name
+    password: Password
+
+    @field_validator("email")
+    @classmethod
+    def lower_email(cls, value):
+        return str(value).lower()
+
+
+class LoginRequest(Input):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=256)
+
+
+class UserUpdate(Input):
+    full_name: Name | None = None
+    email: EmailStr | None = None
+
+
+class WalletUpdate(Input):
+    wallet_address: Address | None
+
+
+class PasswordUpdate(Input):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: Password
+
+
+class AdminUserUpdate(Input):
+    role: UserRole | None = None
+    is_active: bool | None = None
+
+
+class UserResponse(Output):
     id: str
+    email: str
+    full_name: str
+    wallet_address: str | None
     role: UserRole
     is_active: bool
     created_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
-# ── Auth Schemas ──────────────────────────────────────────────────────────────
-class NonceRequest(BaseModel):
-    wallet_address: str = Field(..., pattern=r"^0x[a-fA-F0-9]{40}$")
-
-
-class NonceResponse(BaseModel):
-    nonce: str
-    wallet_address: str
-
-
-class SignatureVerifyRequest(BaseModel):
-    wallet_address: str = Field(..., pattern=r"^0x[a-fA-F0-9]{40}$")
-    signature: str
+    updated_at: datetime
 
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    expires_in: int
     user: UserResponse
 
 
-# ── Event Schemas ─────────────────────────────────────────────────────────────
-class EventBase(BaseModel):
-    name: str = Field(..., min_length=3, max_length=255)
-    description: Optional[str] = None
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
-    location: Optional[str] = None
+class OrganizationCreate(Input):
+    name: str = Field(min_length=2, max_length=200)
+    slug: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", min_length=2, max_length=100)
+    description: str | None = Field(default=None, max_length=10000)
 
 
-class EventCreate(EventBase):
-    pass
+class OrganizationUpdate(Input):
+    name: str | None = Field(default=None, min_length=2, max_length=200)
+    description: str | None = Field(default=None, max_length=10000)
 
 
-class EventUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=3, max_length=255)
-    description: Optional[str] = None
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
-    location: Optional[str] = None
-    status: Optional[EventStatus] = None
-
-
-class EventResponse(EventBase):
+class OrganizationResponse(Output):
     id: str
-    organizer_id: str
-    status: EventStatus
-    banner_ipfs_cid: Optional[str] = None
+    name: str
+    slug: str
+    description: str | None
+    owner_id: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class MemberCreate(Input):
+    user_id: Identifier
+    role: MemberRole = MemberRole.MEMBER
+
+
+class MemberUpdate(Input):
+    role: MemberRole
+
+
+class MemberResponse(Output):
+    id: str
+    organization_id: str
+    user_id: str
+    role: MemberRole
     created_at: datetime
 
-    model_config = {"from_attributes": True}
+
+class EventCreate(Input):
+    organization_id: Identifier
+    name: str = Field(min_length=3, max_length=255)
+    description: str | None = Field(default=None, max_length=10000)
+    start_date: UTCDate
+    end_date: UTCDate
+    location: str | None = Field(default=None, max_length=255)
+    status: EventStatus = EventStatus.DRAFT
+
+    @model_validator(mode="after")
+    def dates(self):
+        if self.end_date <= self.start_date:
+            raise ValueError("end_date must be after start_date")
+        if self.status not in (EventStatus.DRAFT, EventStatus.ACTIVE):
+            raise ValueError("New events must be draft or active")
+        return self
 
 
-# ── Certificate Schemas ───────────────────────────────────────────────────────
-class CertificateIssuanceRequest(BaseModel):
+class EventUpdate(Input):
+    name: str | None = Field(default=None, min_length=3, max_length=255)
+    description: str | None = Field(default=None, max_length=10000)
+    start_date: UTCDate | None = None
+    end_date: UTCDate | None = None
+    location: str | None = Field(default=None, max_length=255)
+    status: EventStatus | None = None
+
+
+class EventResponse(Output):
+    id: str
+    organization_id: str
+    organizer_id: str
+    name: str
+    description: str | None
+    start_date: datetime
+    end_date: datetime
+    location: str | None
+    status: EventStatus
+    created_at: datetime
+    updated_at: datetime
+
+
+class ParticipantCreate(Input):
+    user_id: Identifier
+
+
+class AttendanceUpdate(Input):
+    status: AttendanceStatus
+
+
+class ParticipantResponse(Output):
+    id: str
     event_id: str
-    recipient_wallet: str = Field(..., pattern=r"^0x[a-fA-F0-9]{40}$")
+    user_id: str
+    status: AttendanceStatus
+    attended_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
 
 
-class CertificateBatchIssuanceRequest(BaseModel):
-    event_id: str
-    recipient_wallets: list[str] = Field(..., min_length=1)
-
-    @field_validator("recipient_wallets")
-    @classmethod
-    def validate_wallets(cls, wallets: list[str]) -> list[str]:
-        import re
-        pattern = re.compile(r"^0x[a-fA-F0-9]{40}$")
-        for w in wallets:
-            if not pattern.match(w):
-                raise ValueError(f"Invalid wallet address: {w}")
-        return wallets
+class CSVImportResult(BaseModel):
+    imported: int
+    participants: list[ParticipantResponse]
 
 
-class CertificateResponse(BaseModel):
+class CertificateIssuanceRequest(Input):
+    event_id: Identifier
+    recipient_id: Identifier
+    token_uri: IPFSUri
+
+
+class CertificateBatchIssuanceRequest(Input):
+    certificates: list[CertificateIssuanceRequest] = Field(min_length=1, max_length=100)
+
+
+class TransactionUpdate(Input):
+    tx_hash: TxHash
+
+
+class CertificateConfirmation(Input):
+    token_id: TokenId
+    tx_hash: TxHash
+
+
+class CertificateFailure(Input):
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class CertificateRevoke(Input):
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class CertificateResponse(Output):
     id: str
     event_id: str
     recipient_id: str
-    token_id: Optional[int] = None
-    token_uri: Optional[str] = None
-    metadata_cid: Optional[str] = None
-    contract_address: Optional[str] = None
-    tx_hash: Optional[str] = None
-    block_number: Optional[int] = None
+    recipient_wallet: str
+    chain_id: int
+    token_id: str | None
+    token_uri: str | None
+    contract_address: str | None
+    tx_hash: str | None
+    block_number: int | None
     status: CertificateStatus
-    issued_at: Optional[datetime] = None
-    revoked_at: Optional[datetime] = None
+    issued_at: datetime | None
+    revoked_at: datetime | None
+    revoke_reason: str | None
+    failure_reason: str | None
     created_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
-# ── Verification Schemas ──────────────────────────────────────────────────────
-class VerifyByWalletRequest(BaseModel):
-    wallet_address: str = Field(..., pattern=r"^0x[a-fA-F0-9]{40}$")
+    updated_at: datetime
 
 
-class VerifyByTokenRequest(BaseModel):
-    token_id: int
-    contract_address: Optional[str] = None
+class PublicCertificate(BaseModel):
+    id: str
+    event_id: str
+    event_name: str
+    organization_name: str
+    chain_id: int
+    token_id: str | None
+    contract_address: str | None
+    tx_hash: str | None
+    status: CertificateStatus
+    issued_at: datetime | None
+    revoked_at: datetime | None
 
 
 class VerificationResult(BaseModel):
     is_valid: bool
-    certificate: Optional[CertificateResponse] = None
     on_chain_verified: bool = False
+    source: str = "database"
+    certificate: PublicCertificate
     message: str
 
 
-# ── IPFS Metadata Schema (ERC-721 Metadata Standard) ─────────────────────────
-class CertificateMetadata(BaseModel):
-    """
-    ERC-721 compliant metadata structure for IPFS upload.
-    See: https://eips.ethereum.org/EIPS/eip-721
-    """
-    name: str
-    description: str
-    image: str              # ipfs://CID of certificate image
-    external_url: Optional[str] = None
-    attributes: list[dict] = []
-
-    # Custom fields (non-standard, for display purposes)
-    event_id: Optional[str] = None
-    event_name: Optional[str] = None
-    recipient_name: Optional[str] = None
-    issued_date: Optional[str] = None
-    issuer: Optional[str] = None
+class AuditResponse(Output):
+    id: str
+    actor_id: str | None
+    action: str
+    entity_type: str
+    entity_id: str
+    details: dict
+    created_at: datetime
 
 
-# ── Pagination ────────────────────────────────────────────────────────────────
-class PaginatedResponse(BaseModel):
-    items: list
-    total: int
-    page: int
-    size: int
-    pages: int
+class MetadataInput(Input):
+    name: str = Field(min_length=1, max_length=255)
+    description: str = Field(max_length=10000)
+    image: IPFSUri
+    attributes: list[dict[str, str | int | float]] = Field(default_factory=list, max_length=50)
+
+
+class IPFSResponse(BaseModel):
+    cid: str
+    uri: str

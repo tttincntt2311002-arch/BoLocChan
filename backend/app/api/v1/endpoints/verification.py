@@ -1,33 +1,45 @@
-"""
-Certificate verification endpoints (public, no auth required)
-"""
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+"""Intentionally public verification with a minimal response schema."""
 
-from app.db.base import get_db
+from typing import Annotated
+
+from fastapi import APIRouter, Query
+from sqlalchemy import select
+
+from app.api.dependencies import DB
+from app.core.errors import fail
+from app.core.validation import Address, Identifier, TokenId
+from app.models.models import Certificate
 from app.schemas.schemas import VerificationResult
+from app.services import certificates
+from app.services.common import get_or_404
 
 router = APIRouter()
 
 
-@router.get("/wallet/{wallet_address}", response_model=list[VerificationResult], summary="Verify by wallet")
-async def verify_by_wallet(wallet_address: str, db: Session = Depends(get_db)):
-    """
-    Returns all certificates linked to the given wallet address.
-    Cross-checks database records with on-chain state.
-    """
-    raise HTTPException(status_code=501, detail="Not yet implemented – scaffold only")
+@router.get("/certificate/{certificate_id}", response_model=VerificationResult)
+def by_id(certificate_id: Identifier, db: DB, on_chain: bool = False):
+    """No email, account ID, wallet, IPFS metadata or private reason is exposed."""
+    return certificates.verify(get_or_404(db, Certificate, certificate_id), on_chain)
 
 
-@router.get("/token/{token_id}", response_model=VerificationResult, summary="Verify by token ID")
-async def verify_by_token_id(token_id: int, db: Session = Depends(get_db)):
-    """
-    Verifies a specific SBT token by its on-chain token ID.
-    Returns combined on-chain + off-chain certificate data.
-    """
-    raise HTTPException(status_code=501, detail="Not yet implemented – scaffold only")
-
-
-@router.get("/certificate/{certificate_id}", response_model=VerificationResult, summary="Verify by certificate ID")
-async def verify_by_certificate_id(certificate_id: str, db: Session = Depends(get_db)):
-    raise HTTPException(status_code=501, detail="Not yet implemented – scaffold only")
+@router.get("/token/{token_id}", response_model=VerificationResult)
+def by_token(
+    token_id: TokenId,
+    db: DB,
+    contract_address: Address | None = None,
+    chain_id: Annotated[int | None, Query(gt=0, le=2**63 - 1)] = None,
+    on_chain: bool = False,
+):
+    stmt = select(Certificate).where(Certificate.token_id == token_id)
+    if contract_address:
+        stmt = stmt.where(Certificate.contract_address == contract_address)
+    if chain_id is not None:
+        if chain_id <= 0:
+            fail(422, "invalid_chain_id", "chain_id must be positive")
+        stmt = stmt.where(Certificate.chain_id == chain_id)
+    matches = db.scalars(stmt.limit(2)).all()
+    if not matches:
+        fail(404, "not_found", "Certificate not found")
+    if len(matches) > 1:
+        fail(409, "ambiguous_token", "Supply chain_id and contract_address to identify this token")
+    return certificates.verify(matches[0], on_chain)

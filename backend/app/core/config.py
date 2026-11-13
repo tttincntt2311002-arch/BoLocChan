@@ -1,55 +1,49 @@
-"""
-Application configuration – reads from environment / .env file
-"""
-from __future__ import annotations
+"""Validated configuration; paths are relative to backend."""
 
-from typing import List
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
+from functools import lru_cache
+from pathlib import Path
+from typing import Literal
+
+from dotenv import load_dotenv
+from pydantic import BaseModel, Field, model_validator
+
+BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore",
-    )
-
-    # ── App ──────────────────────────────────────────────────────────────────
+class Settings(BaseModel):
     APP_NAME: str = "SBT Certificate System API"
-    APP_ENV: str = "development"
-    APP_DEBUG: bool = True
-    APP_PORT: int = 8000
-    SECRET_KEY: str = "CHANGE_ME_IN_PRODUCTION"
+    APP_ENV: Literal["development", "test", "production"] = "development"
+    DATABASE_URL: str = f"sqlite:///{(BACKEND_DIR / 'sbt_certificates.db').as_posix()}"
+    SECRET_KEY: str = Field(min_length=32)
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=60, ge=1, le=1440)
+    CORS_ORIGINS: str = "http://localhost:5173"
+    WEB3_PROVIDER_URL: str = ""
+    CHAIN_ID: int = Field(default=11155111, gt=0, le=2**63 - 1)
+    SBT_CONTRACT_ADDRESS: str = ""
+    MIN_CONFIRMATIONS: int = Field(default=2, ge=1)
+    PINATA_JWT: str = ""
+    MAX_CSV_BYTES: int = Field(default=1_048_576, ge=1024)
+    MAX_CSV_ROWS: int = Field(default=1000, ge=1, le=10000)
 
-    # ── CORS ─────────────────────────────────────────────────────────────────
-    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+    @model_validator(mode="after")
+    def validate_security(self):
+        if not self.DATABASE_URL.startswith("sqlite:///"):
+            raise ValueError("This application requires SQLite")
+        if not self.cors_origins_list or any(
+            o == "*" or not o.startswith(("http://", "https://")) for o in self.cors_origins_list
+        ):
+            raise ValueError("CORS_ORIGINS requires explicit http(s) frontend origins")
+        if self.SECRET_KEY.startswith(("CHANGE_", "replace-")):
+            raise ValueError("Generate a random SECRET_KEY of at least 32 characters")
+        return self
 
     @property
-    def cors_origins_list(self) -> List[str]:
-        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
-
-    # ── Database ─────────────────────────────────────────────────────────────
-    DATABASE_URL: str = "sqlite:///./sbt_certificates.db"
-
-    # ── Ethereum / Web3 ──────────────────────────────────────────────────────
-    WEB3_PROVIDER_URL: str = "https://rpc.sepolia.org"
-    CHAIN_ID: int = 11155111
-    SBT_CONTRACT_ADDRESS: str = "0x0000000000000000000000000000000000000000"
-    ADMIN_WALLET_ADDRESS: str = "0x0000000000000000000000000000000000000000"
-    ADMIN_PRIVATE_KEY: str = ""
-
-    # ── IPFS / Pinning ───────────────────────────────────────────────────────
-    IPFS_PINNING_SERVICE: str = "pinata"
-    PINATA_API_KEY: str = ""
-    PINATA_SECRET_API_KEY: str = ""
-    WEB3STORAGE_TOKEN: str = ""
-    IPFS_GATEWAY: str = "https://ipfs.io/ipfs/"
-
-    # ── JWT ──────────────────────────────────────────────────────────────────
-    JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    def cors_origins_list(self) -> list[str]:
+        return [o.strip().rstrip("/") for o in self.CORS_ORIGINS.split(",") if o.strip()]
 
 
-settings = Settings()
+@lru_cache
+def get_settings() -> Settings:
+    load_dotenv(BACKEND_DIR / ".env", override=False)
+    return Settings.model_validate({k: os.environ[k] for k in Settings.model_fields if k in os.environ})

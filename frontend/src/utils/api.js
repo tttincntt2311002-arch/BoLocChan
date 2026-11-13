@@ -1,39 +1,32 @@
-/**
- * Axios instance configured for the SBT Certificate System API
- */
 import axios from 'axios'
 import { APP_CONFIG } from './constants'
+import { clearToken, readToken, SESSION_EXPIRED_EVENT } from './session'
 
 const api = axios.create({
   baseURL: APP_CONFIG.apiBaseUrl,
   timeout: 15000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  headers: { 'Content-Type': 'application/json' },
 })
 
-// ── Request interceptor: attach JWT token ─────────────────────────────────────
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('sbt_access_token')
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
-    }
-    return config
-  },
-  (error) => Promise.reject(error)
-)
+api.interceptors.request.use(config => {
+  const token = readToken()
+  if (token && !config.skipAuth) config.headers.Authorization = `Bearer ${token}`
+  return config
+})
 
-// ── Response interceptor: handle 401 ──────────────────────────────────────────
 api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('sbt_access_token')
-      // TODO: redirect to login / trigger wallet reconnect
+  response => response,
+  error => {
+    // An old request must not clear a newer login, and a rejected login must
+    // not invalidate another authenticated session.
+    const token = readToken()
+    if (error.response?.status === 401 && token &&
+        error.config?.headers?.Authorization === `Bearer ${token}`) {
+      clearToken()
+      window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT))
     }
     return Promise.reject(error)
-  }
+  },
 )
 
 export default api
