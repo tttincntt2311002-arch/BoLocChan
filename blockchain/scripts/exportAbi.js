@@ -3,14 +3,14 @@ const fs = require("node:fs");
 const path = require("node:path");
 require("dotenv").config();
 
-function exportAbi({ contractAddress = process.env.SBT_CONTRACT_ADDRESS || null, network = null } = {}) {
+function exportAbi({ contractAddress = process.env.SBT_CONTRACT_ADDRESS || null, network = null, chainId = null } = {}) {
   if (contractAddress && !/^0x[0-9a-fA-F]{40}$/.test(contractAddress)) {
     throw new Error("SBT_CONTRACT_ADDRESS must be a 20-byte hex address");
   }
   const artifactPath = path.join(__dirname, "../artifacts/contracts/SoulboundCertificate.sol/SoulboundCertificate.json");
   const artifact = JSON.parse(fs.readFileSync(artifactPath, "utf8"));
   const payload = JSON.stringify({
-    contractName: "SoulboundCertificate", contractAddress, network, abi: artifact.abi,
+    contractName: "SoulboundCertificate", contractAddress, network, chainId, abi: artifact.abi,
   }, null, 2) + "\n";
   for (const target of [
     "../../frontend/src/utils/SoulboundCertificate.abi.json",

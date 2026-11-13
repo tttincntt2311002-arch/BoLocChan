@@ -142,11 +142,15 @@ await certificate.locked(0);             // vẫn true
 
 ## Sepolia và ABI
 
+Hướng dẫn deploy Sepolia, preflight số dư/gas, kiểm tra contract và mint test: [SEPOLIA_DEPLOYMENT.md](SEPOLIA_DEPLOYMENT.md). Cần tự cấu hình RPC và private key của ví test trong .env trước khi chạy; script không tạo khóa hoặc dùng ví mặc định trên mạng công khai.
+
 Sao chép .env.example thành .env, cấu hình DEPLOYER_PRIVATE_KEY ngoài source code và SEPOLIA_RPC_URL. INITIAL_ADMIN_ADDRESS mặc định là deployer. INITIAL_ORGANIZER_ADDRESS là tùy chọn cấp Organizer lúc deploy, chỉ dùng khi deployer cũng là initial Admin. Nếu Admin là ví khác, ví Admin cấp Organizer sau deploy.
 
 ```powershell
 npm.cmd run deploy:sepolia
-npm.cmd run verify -- <contractAddress> <initialAdmin>
+npm.cmd run check:sepolia
+npm.cmd run smoke:sepolia
+npm.cmd run verify:sepolia
 ```
 
 Không có private key mặc định trong config. Không tự gửi giao dịch lên mạng công khai khi compile/test. .env được gitignore.

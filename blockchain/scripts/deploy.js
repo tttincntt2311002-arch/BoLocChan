@@ -4,6 +4,13 @@ const path = require("node:path");
 const { exportAbi } = require("./exportAbi");
 
 async function main() {
+  if (hre.network.name === "sepolia") return require("./deploy-sepolia").main();
+  if (!["hardhat", "localhost"].includes(hre.network.name)) {
+    throw new Error("Deployment is allowed only on local Hardhat or Ethereum Sepolia");
+  }
+  if (Number((await hre.ethers.provider.getNetwork()).chainId) !== 31337) {
+    throw new Error("Local deployment requires chain ID 31337");
+  }
   const [deployer] = await hre.ethers.getSigners();
   if (!deployer) throw new Error("No deployer configured. Set DEPLOYER_PRIVATE_KEY in the local .env for Sepolia.");
   const initialAdmin = process.env.INITIAL_ADMIN_ADDRESS || deployer.address;
@@ -44,8 +51,9 @@ async function main() {
   exportAbi({
     contractAddress: hre.network.name === "hardhat" ? null : address,
     network: hre.network.name === "hardhat" ? null : hre.network.name,
+    chainId: hre.network.name === "hardhat" ? null : chainId,
   });
 }
 
-if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });
+if (require.main === module) main().catch(require("./lib/sepolia").safeFailure);
 module.exports = { main };
