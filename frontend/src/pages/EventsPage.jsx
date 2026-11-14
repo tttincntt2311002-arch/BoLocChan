@@ -31,9 +31,9 @@ function EventForm({ event, organizations, onSaved, onClose }) {
     setBusy(true)
     setError('')
     const values = Object.fromEntries(new FormData(e.currentTarget))
-    values.start_date = new Date(values.start_date).toISOString()
-    values.end_date = new Date(values.end_date).toISOString()
     try {
+      values.start_date = new Date(values.start_date).toISOString()
+      values.end_date = new Date(values.end_date).toISOString()
       if (new Date(values.end_date) <= new Date(values.start_date))
         throw new Error('Ngày kết thúc phải sau ngày bắt đầu.')
       if (event) {
@@ -143,7 +143,7 @@ function EventForm({ event, organizations, onSaved, onClose }) {
   )
 }
 
-function EventParticipants({ event, manager }) {
+function EventParticipants({ event, manager, onClose }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const state = useApiData(
@@ -165,6 +165,9 @@ function EventParticipants({ event, manager }) {
   return (
     <section className="panel data-panel">
       <h2>Người tham gia: {event.name}</h2>
+      <button type="button" className="button button-outline" onClick={onClose}>
+        Đóng chi tiết
+      </button>
       <DataState {...state} />
       <DataState error={error} />
       {!manager && !state.loading && !state.data?.length && (
@@ -175,6 +178,38 @@ function EventParticipants({ event, manager }) {
         >
           Đăng ký tham gia
         </button>
+      )}
+      {manager && (
+        <form
+          className="modal-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            const form = e.currentTarget
+            const userId = new FormData(form).get('user_id')
+            action(async () => {
+              await api.post(`/events/${event.id}/participants`, {
+                user_id: userId,
+              })
+              form.reset()
+            })
+          }}
+        >
+          <label>
+            Mã tài khoản người tham gia
+            <input
+              name="user_id"
+              required
+              pattern="[0-9a-fA-F-]{36}"
+              disabled={busy || event.status !== 'active'}
+            />
+          </label>
+          <button
+            className="button button-primary"
+            disabled={busy || event.status !== 'active'}
+          >
+            Thêm người tham gia
+          </button>
+        </form>
       )}
       {manager && (
         <label className="csv-import">
@@ -259,7 +294,11 @@ export default function EventsPage() {
       manager ? allPages('/events', { managed_only: true }) : [],
       manager ? allPages('/organizations', { managed_only: true }) : [],
     ])
-    return { events, managed: new Set(managed.map((e) => e.id)), organizations }
+    return {
+      events,
+      managed: new Set(managed.map((e) => e.id)),
+      organizations,
+    }
   }, [user.id, manager])
   async function createOrganization(e) {
     e.preventDefault()
@@ -421,6 +460,7 @@ export default function EventsPage() {
             state.data?.events.find((e) => e.id === selected.id) || selected
           }
           manager={state.data?.managed.has(selected.id)}
+          onClose={() => setSelected(null)}
         />
       )}
     </>

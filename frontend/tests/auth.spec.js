@@ -3,6 +3,86 @@ import { test, expect } from '@playwright/test'
 const API = 'http://127.0.0.1:8011/api/v1'
 const PASSWORD = 'DemoSBT2026!'
 
+test('all public routes and authenticated routes render without overflow or runtime errors on mobile and desktop', async ({
+  page,
+}) => {
+  test.setTimeout(120000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  for (const width of [390, 1280]) {
+    await page.setViewportSize({ width, height: 900 })
+    for (const route of [
+      '/',
+      '/login',
+      '/register',
+      '/forgot-password',
+      '/verify',
+      '/page-that-does-not-exist',
+    ]) {
+      await page.goto(route)
+      await expect(page.locator('h1')).toBeVisible()
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      ).toBe(true)
+    }
+  }
+  await signIn(page)
+  await expect(page).toHaveURL(/\/dashboard$/)
+  for (const width of [390, 1280]) {
+    await page.setViewportSize({ width, height: 900 })
+    for (const route of [
+      '/dashboard',
+      '/events',
+      '/events/new',
+      '/certificates',
+      '/my-certificates',
+      '/profile',
+      '/verify',
+    ]) {
+      await page.goto(route)
+      await expect(page.locator('h1')).toBeVisible()
+      await expect(
+        page.getByText('Đang tải dữ liệu…', { exact: true }),
+      ).toHaveCount(0)
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      ).toBe(true)
+    }
+  }
+  expect(errors).toEqual([])
+})
+
+test('event loading and network failure display retry and recover', async ({
+  page,
+}) => {
+  await signIn(page, 'organizer@example.com')
+  await expect(page).toHaveURL(/\/dashboard$/)
+  let release
+  const gate = new Promise((resolve) => {
+    release = resolve
+  })
+  await page.route('**/api/v1/events?**', async (route) => {
+    await gate
+    await route.abort('connectionfailed')
+  })
+  await page.goto('/events')
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Đang tải dữ liệu' }),
+  ).toBeVisible()
+  release()
+  await expect(page.getByRole('alert')).toContainText(
+    'Không kết nối được backend',
+  )
+  await page.unroute('**/api/v1/events?**')
+  await page.getByRole('button', { name: 'Thử lại', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(page.locator('article').first()).toBeVisible()
+})
+
 test.beforeEach(async ({ page }) => {
   await page.route('https://fonts.googleapis.com/**', (route) => route.abort())
 })

@@ -13,6 +13,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         position="top-right"
         toastOptions={{
           style: {
+            // Informational toasts must not cover or capture clicks on wallet controls.
+            pointerEvents: 'none',
             background: '#1f2937',
             color:      '#f9fafb',
             border:     '1px solid #374151',

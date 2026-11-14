@@ -140,7 +140,7 @@ export default function MyCertificates() {
                     disabled={Boolean(busy)}
                     onClick={() => verify(c)}
                   >
-                    Đối chiếu blockchain
+                    {busy === c.id ? 'Đang đối chiếu…' : 'Đối chiếu blockchain'}
                   </button>
                 )}
                 {checks[c.id] && (

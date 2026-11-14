@@ -7,6 +7,196 @@ const API = 'http://127.0.0.1:8011/api/v1'
 const adminWallet = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'
 const recipientWallet = '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC'
 
+test('admin provisions organizer, organizer manages attendance, participant links wallet, public QR detects revocation', async ({
+  page,
+  request,
+  browser,
+}) => {
+  test.setTimeout(120000)
+  const account = 'qa-organizer-' + Date.now() + '@example.com'
+  const created = await request.post(API + '/auth/register', {
+    data: {
+      email: account,
+      full_name: 'QA Organizer',
+      password: 'DemoSBT2026!',
+    },
+  })
+  expect(created.status()).toBe(201)
+  const organizer = await created.json()
+  await wallet(page)
+  await login(page)
+  const adminToken = await page.evaluate(() =>
+    localStorage.getItem('sbt_access_token'),
+  )
+  const promoted = await request.patch(`${API}/users/${organizer.id}`, {
+    headers: { Authorization: 'Bearer ' + adminToken },
+    data: { role: 'organizer' },
+  })
+  expect(promoted.ok()).toBeTruthy()
+  const users = await (
+    await request.get(API + '/users', {
+      headers: { Authorization: 'Bearer ' + adminToken },
+    })
+  ).json()
+  const person = users.items.find(
+    (item) => item.email === 'participant@example.com',
+  )
+  await page.getByRole('button', { name: 'Đăng xuất', exact: true }).click()
+  await login(page, account)
+  await page.goto('/events')
+  await page.getByLabel('Tên tổ chức', { exact: true }).fill('QA Organization')
+  await page.getByLabel('Slug', { exact: true }).fill('qa-org-' + Date.now())
+  await page.getByRole('button', { name: 'Tạo tổ chức', exact: true }).click()
+  await expect(page.getByLabel('Tên tổ chức', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Tạo sự kiện', exact: true }).click()
+  const name = 'QA Organizer Event ' + Date.now()
+  await page.getByLabel('Tên sự kiện', { exact: true }).fill(name)
+  await page
+    .getByLabel('Ngày bắt đầu', { exact: true })
+    .fill('2099-01-02T10:00')
+  await page
+    .getByLabel('Ngày kết thúc', { exact: true })
+    .fill('2099-01-02T09:00')
+  await page.getByRole('button', { name: 'Lưu sự kiện', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText(
+    'Ngày kết thúc phải sau ngày bắt đầu',
+  )
+  await page
+    .getByLabel('Ngày kết thúc', { exact: true })
+    .fill('2099-01-02T12:00')
+  await page.getByRole('button', { name: 'Lưu sự kiện', exact: true }).click()
+  const row = page.locator('article').filter({ hasText: name })
+  await expect(row).toBeVisible()
+  const headers = {
+    Authorization:
+      'Bearer ' +
+      (await page.evaluate(() => localStorage.getItem('sbt_access_token'))),
+  }
+  const events = await (
+    await request.get(API + '/events', { headers, params: { q: name } })
+  ).json()
+  const event = events.items.find((item) => item.name === name)
+  expect(event).toBeTruthy()
+  await row
+    .getByRole('button', { name: 'Chi tiết & người tham gia', exact: true })
+    .click()
+  await page
+    .getByLabel('Mã tài khoản người tham gia', { exact: true })
+    .fill(person.id)
+  await page
+    .getByRole('button', { name: 'Thêm người tham gia', exact: true })
+    .click()
+  await page
+    .getByLabel('Điểm danh Demo Participant', { exact: true })
+    .selectOption('attended')
+  await expect(
+    page.getByLabel('Điểm danh Demo Participant', { exact: true }),
+  ).toBeEnabled()
+
+  // Separate participant browser session; use a wallet address distinct from the organizer.
+  const recipientContext = await browser.newContext()
+  const recipient = await recipientContext.newPage()
+  const anonymousContext = await browser.newContext()
+  const anonymous = await anonymousContext.newPage()
+  try {
+    await wallet(recipient, { account: recipientWallet })
+    await recipient.route('https://fonts.googleapis.com/**', (route) =>
+      route.abort(),
+    )
+    await anonymous.route('https://fonts.googleapis.com/**', (route) =>
+      route.abort(),
+    )
+    await login(recipient, 'participant@example.com')
+    await recipient.goto('/profile')
+    await recipient
+      .getByRole('button', {
+        name: 'Liên kết ví MetaMask hiện tại',
+        exact: true,
+      })
+      .click()
+    await expect(
+      recipient.getByLabel('Địa chỉ ví Ethereum', { exact: true }),
+    ).toHaveValue(recipientWallet)
+    await page.goto(`/certificates?event=${event.id}`)
+    await page
+      .getByRole('combobox', { name: 'Người đã tham dự', exact: true })
+      .selectOption(person.id)
+    await page
+      .getByLabel('Metadata URI', { exact: true })
+      .fill('ipfs://bafytest/metadata.json')
+    await page
+      .getByRole('button', { name: 'Cấp chứng nhận qua MetaMask', exact: true })
+      .click()
+    await expect(
+      page.getByText(/Đã xác minh và lưu chứng nhận Token #/),
+    ).toBeVisible({ timeout: 30000 })
+    const records = await (
+      await request.get(API + '/certificates', {
+        headers,
+        params: { event_id: event.id },
+      })
+    ).json()
+    expect(records.total).toBe(1)
+    expect(records.items[0].status).toBe('issued')
+    await recipient.goto('/my-certificates')
+    await expect(
+      recipient.locator('article').filter({ hasText: name }),
+    ).toBeVisible()
+    await page
+      .getByRole('button', { name: 'Xem chứng nhận', exact: true })
+      .click()
+    await page.getByRole('button', { name: 'QR xác thực', exact: true }).click()
+    const qr = await page
+      .getByRole('img', {
+        name: `QR xác thực Token ${records.items[0].token_id}`,
+      })
+      .getAttribute('src')
+    const qrBytes = Buffer.from(qr.split(',')[1], 'base64')
+    await anonymous.goto('http://127.0.0.1:5178/verify')
+    const scan = () =>
+      anonymous.getByLabel('Tải ảnh QR', { exact: true }).setInputFiles({
+        name: 'certificate.png',
+        mimeType: 'image/png',
+        buffer: qrBytes,
+      })
+    await scan()
+    await expect(anonymous.locator('.verification-verdict')).toHaveText(
+      'VALID',
+      { timeout: 15000 },
+    )
+    await page
+      .getByRole('button', { name: 'Thu hồi on-chain', exact: true })
+      .click()
+    await page
+      .getByRole('button', {
+        name: 'Xác nhận thu hồi qua MetaMask',
+        exact: true,
+      })
+      .click()
+    await expect(
+      page.getByText('Đã đồng bộ kết quả thu hồi từ blockchain.', {
+        exact: true,
+      }),
+    ).toBeVisible({ timeout: 30000 })
+    await anonymous.reload()
+    await expect(anonymous.locator('.verification-verdict')).toHaveText(
+      'REVOKED',
+      { timeout: 15000 },
+    )
+    await scan()
+    await expect(anonymous.locator('.verification-verdict')).toHaveText(
+      'REVOKED',
+      { timeout: 15000 },
+    )
+    expect(
+      await anonymous.evaluate(() => localStorage.getItem('sbt_access_token')),
+    ).toBeNull()
+  } finally {
+    await recipientContext.close()
+    await anonymousContext.close()
+  }
+})
+
 test.beforeEach(async ({ page }) => {
   await page.route('https://fonts.googleapis.com/**', (route) => route.abort())
   await page.route('**/ipfs/bafytest*/metadata.json', (route) =>
@@ -150,6 +340,95 @@ async function prepare(page, request) {
   return { event, headers, recipientId: person.id }
 }
 
+test('metadata upload excludes recipient identifiers before pinning', async ({
+  page,
+  request,
+}) => {
+  await wallet(page)
+  const { recipientId } = await prepare(page, request)
+  let submitted
+  await page.route('**/ipfs/upload/metadata', async (route) => {
+    submitted = route.request().postDataJSON()
+    await route.fulfill({
+      status: 503,
+      json: { error: { message: 'Pinning disabled in privacy test' } },
+    })
+  })
+  await page
+    .getByRole('combobox', { name: 'Metadata', exact: true })
+    .selectOption('upload')
+  await page
+    .getByLabel('Ảnh chứng nhận trên IPFS', { exact: true })
+    .fill('ipfs://bafyimage')
+  await page
+    .getByRole('button', { name: 'Cấp chứng nhận qua MetaMask', exact: true })
+    .click()
+  await expect(page.getByRole('alert')).toContainText(
+    'Pinning disabled in privacy test',
+  )
+  expect(submitted.attributes).toHaveLength(1)
+  expect(submitted.attributes[0].trait_type).toBe('event_id')
+  expect(JSON.stringify(submitted)).not.toContain(recipientId)
+  expect(await page.evaluate(() => window.testWallet.sends)).toBe(0)
+})
+
+test('a pending revocation never displays a successful revocation', async ({
+  page,
+  request,
+}) => {
+  await wallet(page)
+  const { event, headers } = await prepare(page, request)
+  await page
+    .getByRole('button', { name: 'Cấp chứng nhận qua MetaMask', exact: true })
+    .click()
+  await expect(
+    page.getByText(/Đã xác minh và lưu chứng nhận Token #/),
+  ).toBeVisible({ timeout: 30000 })
+  const records = await (
+    await request.get(API + '/certificates', {
+      headers,
+      params: { event_id: event.id },
+    })
+  ).json()
+  const certificate = records.items[0]
+  const pending = await request.patch(
+    `${API}/certificates/${certificate.id}/revocation-transaction`,
+    {
+      headers,
+      data: { tx_hash: '0x' + '1'.repeat(64) },
+    },
+  )
+  expect(pending.ok()).toBeTruthy()
+  expect(await page.evaluate(() => window.testWallet.sends)).toBe(1)
+  await page.reload()
+  await page
+    .getByRole('button', { name: 'Xem chứng nhận', exact: true })
+    .click()
+  await page
+    .getByRole('button', { name: 'Thu hồi on-chain', exact: true })
+    .click()
+  await page
+    .getByRole('button', { name: 'Xác nhận thu hồi qua MetaMask', exact: true })
+    .click()
+  await expect(page.getByRole('alert')).toContainText(
+    'Giao dịch thu hồi chưa được xác nhận',
+  )
+  await expect(
+    page.getByText('Đã đồng bộ kết quả thu hồi từ blockchain.', {
+      exact: true,
+    }),
+  ).toHaveCount(0)
+  expect(
+    (
+      await (
+        await request.get(`${API}/certificates/${certificate.id}`, { headers })
+      ).json()
+    ).status,
+  ).toBe('issued')
+  // The injected provider is recreated on reload; sync must not broadcast.
+  expect(await page.evaluate(() => window.testWallet.sends)).toBe(0)
+})
+
 test('missing MetaMask and rejected connection show actionable errors', async ({
   page,
 }) => {
@@ -250,7 +529,7 @@ test('browser mints once through BrowserProvider; FastAPI verifies actual EVM re
     .click()
   await expect(
     card.getByText('Đã đối chiếu backend và blockchain.', { exact: true }),
-  ).toBeVisible()
+  ).toBeVisible({ timeout: 30000 })
   await page.evaluate((address) => {
     window.testWallet.account = address
     window.testWallet.emit('accountsChanged', [address])
@@ -674,7 +953,9 @@ test('camera stream decodes a certificate QR and verifies its identity', async (
   test.setTimeout(45000)
   const identity =
     'http://127.0.0.1:5178/verify?chainId=31337&contractAddress=0x5fbdb2315678afecb367f032d93f642f64180aa3&tokenId=999999'
-  const modules = QRCode.create(identity, { errorCorrectionLevel: 'M' }).modules
+  const modules = QRCode.create(identity, {
+    errorCorrectionLevel: 'M',
+  }).modules
   const scale = 6,
     width = (modules.size + 8) * scale,
     y = Buffer.alloc(width * width, 235)

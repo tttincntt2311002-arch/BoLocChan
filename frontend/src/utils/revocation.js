@@ -1,5 +1,6 @@
 import api from './api'
-import { mintContext } from './web3'
+import { getChainId, getConnectedAccount, mintContext } from './web3'
+import { APP_CONFIG } from './constants'
 
 const active = new Set()
 export async function revokeCertificate(certificate, address, stage) {
@@ -28,6 +29,13 @@ export async function revokeCertificate(certificate, address, stage) {
       return (await api.get(`/certificates/${certificate.id}`)).data
     }
     await context.contract.revokeCertificate.estimateGas(certificate.token_id)
+    if (
+      (await getConnectedAccount())?.toLowerCase() !== address.toLowerCase() ||
+      (await getChainId()) !== APP_CONFIG.chainId
+    )
+      throw new Error(
+        'Ví hoặc mạng đã thay đổi. Hãy kiểm tra lại trước khi thu hồi.',
+      )
     stage('Hãy xác nhận thu hồi trong MetaMask…')
     const tx = await context.contract.revokeCertificate(certificate.token_id)
     stage('Đã gửi giao dịch thu hồi. Đang chờ xác nhận…')

@@ -108,10 +108,7 @@ export default function CertificatesPage() {
                   selectedEvent.name,
               ),
               image: String(form.get('image') || ''),
-              attributes: [
-                { trait_type: 'event_id', value: eventId },
-                { trait_type: 'recipient_id', value: recipientId },
-              ],
+              attributes: [{ trait_type: 'event_id', value: eventId }],
             },
             { timeout: 45000 },
           )
@@ -232,7 +229,9 @@ export default function CertificatesPage() {
                     <textarea name="description" rows={3} disabled={busy} />
                   </label>
                   <p className="auth-hint">
-                    Chức năng tải lên cần cấu hình Pinata ở backend.
+                    Chức năng tải lên cần cấu hình Pinata ở backend. Metadata và
+                    ảnh sẽ công khai trên IPFS. Không nhập tên, email, số điện
+                    thoại hoặc thông tin cá nhân của người nhận.
                   </p>
                 </>
               )}

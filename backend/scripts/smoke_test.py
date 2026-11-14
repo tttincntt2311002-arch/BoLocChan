@@ -136,7 +136,17 @@ def main():
                     check("GET", "/api/v1/auth/me", 401, headers=tokens["participant"])
                 print(json.dumps({"result": "passed", "transport": "real HTTP", "checks": checks}, indent=2))
             finally:
-                process.terminate()
+                if os.name == "nt":
+                    # The venv launcher can own a child Python process on Windows.
+                    # Stopping only the launcher leaves SQLite open in that child.
+                    subprocess.run(
+                        ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=False,
+                    )
+                else:
+                    process.terminate()
                 try:
                     process.wait(timeout=10)
                 except subprocess.TimeoutExpired:

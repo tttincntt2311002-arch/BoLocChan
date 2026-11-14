@@ -356,6 +356,21 @@ class MetadataInput(Input):
     image: IPFSUri
     attributes: list[dict[str, str | int | float]] = Field(default_factory=list, max_length=50)
 
+    @field_validator("attributes")
+    @classmethod
+    def public_attributes_only(cls, attributes):
+        # These documents become public and immutable once pinned to IPFS.
+        # Recipient identity belongs only in the authenticated registry/PDF.
+        allowed_traits = {"event_id", "certificate_type", "achievement"}
+        for attribute in attributes:
+            if set(attribute) != {"trait_type", "value"} or attribute["trait_type"] not in allowed_traits:
+                raise ValueError(
+                    "Metadata attributes may contain only public event_id, certificate_type or achievement traits"
+                )
+            if len(str(attribute["value"])) > 255:
+                raise ValueError("Metadata attribute values must not exceed 255 characters")
+        return attributes
+
 
 class IPFSResponse(BaseModel):
     cid: str

@@ -67,7 +67,10 @@ class BlockchainVerifier:
                 response.raise_for_status()
                 payload = response.json()
             if isinstance(payload, dict) and method == "eth_call" and payload.get("error"):
-                data = payload["error"].get("data", "")
+                rpc_error = payload["error"]
+                if not isinstance(rpc_error, dict):
+                    raise ValueError("Malformed RPC error")
+                data = rpc_error.get("data", "")
                 if isinstance(data, dict):
                     data = data.get("data", "")
                 missing_selector = "0x" + keccak(b"ERC721NonexistentToken(uint256)")[:4].hex()
@@ -155,6 +158,8 @@ class BlockchainVerifier:
         if receipt is None:
             fail(409, "transaction_pending", "Transaction has not been mined")
         try:
+            if not isinstance(receipt, dict):
+                raise ValueError("Invalid receipt object")
             if not HASH_PATTERN.fullmatch(receipt["transactionHash"]) or receipt["transactionHash"].lower() != tx_hash:
                 raise ValueError("Receipt transaction hash does not match")
             status = rpc_quantity(receipt["status"])
@@ -183,7 +188,7 @@ class BlockchainVerifier:
                 if timestamp
                 else None,
             }
-        except (KeyError, TypeError, ValueError, AttributeError):
+        except (KeyError, TypeError, ValueError, AttributeError, OverflowError, OSError):
             fail(502, "invalid_receipt", "Ethereum RPC returned an invalid transaction receipt")
 
     def confirm(self, certificate, token_id: str, tx_hash: str) -> dict:
@@ -214,7 +219,7 @@ class BlockchainVerifier:
                         "issued_at": datetime.fromtimestamp(timestamp, timezone.utc),
                         "actor_address": issuer,
                     }
-        except (KeyError, TypeError, ValueError, AttributeError, OverflowError, UnicodeError):
+        except (KeyError, TypeError, ValueError, AttributeError, OverflowError, UnicodeError, OSError):
             fail(502, "invalid_receipt", "Ethereum RPC returned an invalid transaction receipt")
         fail(409, "mint_log_mismatch", "No mint log matches this certificate, event, recipient and token")
 

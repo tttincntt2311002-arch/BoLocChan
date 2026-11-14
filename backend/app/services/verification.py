@@ -267,7 +267,11 @@ def verify_token(db, chain_id, contract_address, token_id, certificate=None):
                 checks["chain_id"] = False
             if exc.detail.get("code") == "contract_mismatch":
                 checks["contract_address"] = False
-            if exc.detail.get("code") in ("transaction_pending", "insufficient_confirmations", "noncanonical_transaction"):
+            if exc.detail.get("code") in (
+                "transaction_pending",
+                "insufficient_confirmations",
+                "noncanonical_transaction",
+            ):
                 raise
             result["message"] = exc.detail["message"]
             return result

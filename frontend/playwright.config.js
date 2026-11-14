@@ -1,13 +1,18 @@
 import { defineConfig } from '@playwright/test'
 import path from 'node:path'
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const root = path.dirname(fileURLToPath(import.meta.url))
-const python = path.resolve(
-  root,
-  '../backend/.venv',
-  process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python',
-)
+const executable =
+  process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'
+const python =
+  process.env.PYTHON ||
+  [
+    path.resolve(root, '../backend/.venv', executable),
+    path.resolve(root, '../.venv', executable),
+  ].find(existsSync) ||
+  'python'
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 
 export default defineConfig({
@@ -15,7 +20,9 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
-  timeout: 30000,
+  // First navigation also compiles Vite dependencies after a clean npm ci.
+  timeout: 60000,
+  expect: { timeout: 15000 },
   reporter: 'list',
   use: {
     baseURL: 'http://127.0.0.1:5178',

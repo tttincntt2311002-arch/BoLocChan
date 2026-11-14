@@ -65,11 +65,16 @@ export default function CertificateTools({
     setBusy(true)
     setError('')
     try {
-      await revokeCertificate(certificate, address, setStage)
+      const result = await revokeCertificate(certificate, address, setStage)
+      if (result.status !== 'revoked')
+        throw new Error(
+          'Giao dịch thu hồi chưa được xác nhận. Hãy đồng bộ lại lịch sử.',
+        )
       setStage('Đã đồng bộ kết quả thu hồi từ blockchain.')
       setOpen('history')
       onChanged?.()
     } catch (err) {
+      setStage('')
       setError(errorMessage(err))
     } finally {
       setBusy(false)

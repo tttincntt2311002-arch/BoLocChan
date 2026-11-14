@@ -250,8 +250,15 @@ def test_revocation_intent_stays_pending_until_chain_evidence_then_worker_record
     issued(ctx, pending)
     root = f"/api/v1/certificates/{pending['id']}"
     headers = ctx.headers["organizer"]
-    assert ctx.client.patch(root + "/revocation-transaction", headers=ctx.headers["participant"], json={"tx_hash": REV_TX}).status_code == 403
-    assert ctx.client.patch(root + "/revocation-transaction", headers=headers, json={"tx_hash": REV_TX}).status_code == 200
+    assert (
+        ctx.client.patch(
+            root + "/revocation-transaction", headers=ctx.headers["participant"], json={"tx_hash": REV_TX}
+        ).status_code
+        == 403
+    )
+    assert (
+        ctx.client.patch(root + "/revocation-transaction", headers=headers, json={"tx_hash": REV_TX}).status_code == 200
+    )
     full_rpc(pending, revoked=True)
     sync_pending()
     record = ctx.client.get(root, headers=headers).json()

@@ -9,7 +9,7 @@ Solidity **0.8.28**, OpenZeppelin Contracts **5.6.1**, Hardhat **2.29.2**, ether
 Node.js 22+; đã chạy bằng Node.js 24.14.0 trên Windows.
 
 ```powershell
-cd D:\Blockchain-NTH\BoLocChan\blockchain
+cd blockchain
 npm.cmd ci
 npm.cmd run compile
 npm.cmd test
@@ -19,8 +19,8 @@ npm.cmd run test:integration
 
 Trên Linux/macOS dùng `npm` thay `npm.cmd`.
 
-- Unit test: **91 passing** trên EVM Hardhat, deploy bytecode và thực thi giao dịch thật.
-- Coverage cho SoulboundCertificate: **100% statements, branches, functions, lines**. Test harness không tính vào coverage.
+- Unit test: lần rà soát 2026-11-14 chạy **102 passing**, bao gồm 91 tests contract và 11 tests deployment guards.
+- Chạy `npm.cmd run test:coverage` để đo coverage hiện tại; không suy ra coverage từ số test passing. Test harness không tính vào coverage.
 - Integration: tự mở Hardhat JSON-RPC node tạm tại port trống, deploy, cấp Organizer, mint, đọc receipt bằng backend Python, revoke và xác minh lại trạng thái. Không dùng database hay server đang chạy của bạn.
 - Integration cần dependency Python của backend, mặc định dùng `backend/.venv`. Có thể chọn executable bằng biến môi trường `PYTHON`.
 - `contracts/test/CertificateReceiver.sol` chỉ chứa receiver/harness phục vụ kiểm thử; script deploy chỉ triển khai SoulboundCertificate.
