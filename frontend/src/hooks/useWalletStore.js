@@ -3,7 +3,7 @@ import {
   connectWallet,
   getConnectedAccount,
   getChainId,
-  switchToSepolia,
+  switchToConfiguredChain,
   subscribeToWalletEvents,
 } from '@/utils/web3'
 import { APP_CONFIG } from '@/utils/constants'
@@ -55,7 +55,7 @@ const useWalletStore = create((set, get) => ({
   },
   switchNetwork: async () => {
     try {
-      await switchToSepolia()
+      await switchToConfiguredChain()
       await get().refresh()
       set({ error: '' })
     } catch (error) {

@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import axios from 'axios'
 import exported from './SoulboundCertificate.abi.json'
-import { APP_CONFIG, SEPOLIA_CHAIN_PARAMS } from './constants'
+import { APP_CONFIG, CHAIN_PARAMS } from './constants'
 import api from './api'
 
 let readProvider
@@ -60,29 +60,33 @@ export async function getChainId() {
   const chain = await injectedWallet()?.request({ method: 'eth_chainId' })
   return chain ? Number(chain) : null
 }
-export async function switchToSepolia() {
+export async function switchToConfiguredChain() {
   const wallet = injectedWallet()
   if (!wallet) throw new Error('Chưa cài MetaMask.')
+  if (!Number.isSafeInteger(APP_CONFIG.chainId) || APP_CONFIG.chainId <= 0)
+    throw new Error('VITE_CHAIN_ID phải là số nguyên dương hợp lệ.')
   try {
     await wallet.request({
       method: 'wallet_switchEthereumChain',
-      params: [{ chainId: SEPOLIA_CHAIN_PARAMS.chainId }],
+      params: [{ chainId: CHAIN_PARAMS.chainId }],
     })
   } catch (error) {
     if ((error.code ?? error.data?.originalError?.code) !== 4902) throw error
+    if (!/^https?:\/\//i.test(APP_CONFIG.rpcUrl))
+      throw new Error('Cần cấu hình VITE_RPC_URL để thêm mạng vào MetaMask.')
     await wallet.request({
       method: 'wallet_addEthereumChain',
-      params: [SEPOLIA_CHAIN_PARAMS],
+      params: [CHAIN_PARAMS],
     })
     await wallet.request({
       method: 'wallet_switchEthereumChain',
-      params: [{ chainId: SEPOLIA_CHAIN_PARAMS.chainId }],
+      params: [{ chainId: CHAIN_PARAMS.chainId }],
     })
   }
   if ((await getChainId()) !== APP_CONFIG.chainId)
     throw new Error('Ví chưa chuyển sang mạng được cấu hình.')
 }
-export const isOnSepolia = async () =>
+export const isOnConfiguredChain = async () =>
   (await getChainId()) === APP_CONFIG.chainId
 export const formatAddress = (address, chars = 4) =>
   address ? `${address.slice(0, chars + 2)}…${address.slice(-chars)}` : ''
@@ -92,10 +96,16 @@ export const ipfsToHttp = (uri) =>
   uri?.startsWith('ipfs://')
     ? `${APP_CONFIG.ipfsGateway}${uri.slice(7)}`
     : uri || ''
-export const transactionUrl = (hash, chainId = APP_CONFIG.chainId) =>
-  Number(chainId) === 11155111 && /^0x[0-9a-f]{64}$/i.test(hash || '')
-    ? `https://sepolia.etherscan.io/tx/${hash}`
-    : null
+export const transactionUrl = (hash, chainId = APP_CONFIG.chainId) => {
+  if (!/^0x[0-9a-f]{64}$/i.test(hash || '')) return null
+  const explorer =
+    Number(chainId) === APP_CONFIG.chainId
+      ? APP_CONFIG.blockExplorerUrl
+      : Number(chainId) === 11155111
+        ? 'https://sepolia.etherscan.io'
+        : ''
+  return explorer ? `${explorer}/tx/${hash}` : null
+}
 export async function loadMetadata(uri) {
   if (!uri?.startsWith('ipfs://'))
     throw new Error('Metadata phải dùng URI ipfs://.')
@@ -116,7 +126,7 @@ export async function mintContext(
 ) {
   if (!expectedAddress || !(await getConnectedAccount()))
     throw new Error('Bạn chưa kết nối ví MetaMask.')
-  if (!(await isOnSepolia())) await switchToSepolia()
+  if (!(await isOnConfiguredChain())) await switchToConfiguredChain()
   const { data: config } = await api.get('/blockchain/config')
   if (!config.configured)
     throw new Error(

@@ -7,6 +7,7 @@ import CertificateTools from '@/components/CertificateTools'
 import { CertificateDetails, DataState, Heading } from '@/components/DataUI'
 import api, { allPages } from '@/utils/api'
 import { errorMessage } from '@/utils/errors'
+import { APP_CONFIG } from '@/utils/constants'
 import {
   contractAddress,
   getContract,
@@ -33,6 +34,30 @@ export default function MyCertificates() {
     ])
     return { certificates, events }
   }, [user.id, address])
+  const reload = state.reload
+  useEffect(() => {
+    if (!address) return
+    let refreshing = false
+    const refresh = async () => {
+      if (refreshing || document.visibilityState !== 'visible') return
+      refreshing = true
+      try {
+        await reload()
+      } finally {
+        refreshing = false
+      }
+    }
+    const timer = setInterval(refresh, 15000)
+    window.addEventListener('focus', refresh)
+    window.addEventListener('online', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', refresh)
+      window.removeEventListener('online', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [address, reload])
   async function verify(certificate) {
     const version = generation.current
     setBusy(certificate.id)
@@ -108,7 +133,19 @@ export default function MyCertificates() {
       <Heading
         title="Chứng nhận của tôi"
         description="Chứng nhận của tài khoản đăng nhập thuộc ví MetaMask hiện tại."
-        actions={<WalletButton />}
+        actions={
+          <>
+            <button
+              type="button"
+              className="button button-outline"
+              disabled={!address || state.loading}
+              onClick={reload}
+            >
+              Làm mới danh sách
+            </button>
+            <WalletButton />
+          </>
+        }
       />
       {!address ? (
         <p className="empty-state">
@@ -119,7 +156,7 @@ export default function MyCertificates() {
           <p className="hash-text">Ví hiện tại: {address}</p>
           {isWrongNetwork && (
             <p role="alert" className="auth-error">
-              Ví đang ở sai mạng. Chọn chuyển sang Sepolia.
+              Ví đang ở sai mạng. Chọn chuyển sang {APP_CONFIG.chainName}.
             </p>
           )}
           <DataState {...state} />

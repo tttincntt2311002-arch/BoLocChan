@@ -1,8 +1,12 @@
 {
+  "contractName": "SoulboundCertificate",
   "network": "localhost",
   "chainId": 31337,
   "contractAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-  "deployedAt": "2026-11-09T10:57:58.565Z",
+  "adminAddress": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "organizerAddress": "0xc016184d87c5d0e4e74a21b3ab935c42525a4bb2",
   "deployerAddress": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-  "transactionHash": "0x88ef4b38872b930d71c997ba1e9f0f6b89e5192fc8632217e927d20cc4bb5a14"
+  "transactionHash": "0xfadb1313c446a65bb7a8020a25cff5e9bb92817ad36187ff3e3fcfa8f3b39d9c",
+  "blockNumber": 1,
+  "compiler": "0.8.28+commit.7893614a.Emscripten.clang"
 }

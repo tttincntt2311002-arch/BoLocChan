@@ -120,9 +120,22 @@ export default function VerifyPage() {
       if (version !== generation.current) return
       const certificate = data.certificate
       if (certificate.token_id == null) {
+        const status = certificate.status === 'failed' ? 'FAILED' : 'PENDING'
         setResult({
-          status: 'NOT FOUND',
-          message: 'Chứng nhận chưa được xác nhận trên blockchain.',
+          status,
+          message:
+            status === 'FAILED'
+              ? 'Lần cấp chứng nhận chưa thành công. Organizer cần kiểm tra lỗi và thử lại trong trang Cấp chứng nhận SBT.'
+              : certificate.tx_hash
+                ? 'Đã ghi nhận giao dịch mint và đang chờ xác nhận. Hãy dùng Đồng bộ trong trang Cấp chứng nhận SBT.'
+                : 'Hệ thống đã tạo bản ghi, nhưng chưa ghi nhận giao dịch mint. Organizer cần chọn Tiếp tục cấp và xác nhận giao dịch trong MetaMask.',
+          certificate_id: certificate.id,
+          event_name: certificate.event_name,
+          organization_name: certificate.organization_name,
+          chain_id: certificate.chain_id,
+          token_id: null,
+          is_valid: false,
+          on_chain_verified: false,
           checks: {},
           history: [],
         })
@@ -229,14 +242,19 @@ export default function VerifyPage() {
                   REVOKED: 'Chứng nhận đã bị thu hồi',
                   INVALID: 'Chứng nhận không hợp lệ',
                   'NOT FOUND': 'Không tìm thấy chứng nhận',
+                  PENDING: 'Chứng nhận đang chờ phát hành',
+                  FAILED: 'Phát hành chứng nhận chưa thành công',
                 }[result.status]
               }
             </h2>
             <p>{result.message}</p>
             {result.event_name && <h3>{result.event_name}</h3>}
             {result.organization_name && <p>{result.organization_name}</p>}
+            {result.certificate_id && (
+              <p>Mã chứng nhận: {result.certificate_id}</p>
+            )}
             <p>
-              Token ID: {result.token_id ?? value} · Chain ID:{' '}
+              Token ID: {result.token_id ?? 'Chưa được cấp'} · Chain ID:{' '}
               {result.chain_id ?? chain}
             </p>
             {result.issued_at && <p>Ngày cấp: {dateText(result.issued_at)}</p>}

@@ -2,6 +2,13 @@
 
 Backend Python 3.11+ sử dụng FastAPI, SQLAlchemy 2, SQLite, Pydantic 2, JWT HS256 và bcrypt. API có router, service, model, schema riêng; quản lý schema bằng Alembic.
 
+## Có cần MetaMask? Dữ liệu có bị gán cứng không?
+
+- Đăng nhập, tạo sự kiện, đăng ký và điểm danh dùng API + SQLite thật; không cần MetaMask.
+- Cấp/thu hồi SBT on-chain cần ví ký giao dịch, giao diện hiện tại dùng MetaMask. Organizer trả gas; người nhận chỉ cần cung cấp ví để nhận SBT. Bộ sưu tập trên web yêu cầu kết nối ví để lọc chứng nhận. Tra cứu công khai không cần ví.
+- `seed.py` là bước **tùy chọn** để tạo tài khoản/tổ chức/sự kiện demo trong database. Seed không gán địa chỉ ví, không tạo chứng nhận có CID mẫu và không tạo giao dịch blockchain.
+- Địa chỉ contract toàn số 0 là chỗ trống cấu hình, chưa thể mint. Phải deploy contract, cấu hình cùng chain/contract ở frontend và backend, rồi cấp `ORGANIZER_ROLE` cho ví ký. Xem [hướng dẫn kết nối MetaMask và chạy local](../frontend/README.md#kết-nối-metamask-và-cấp-sbt-thật-trên-hardhat-local).
+
 ## Chạy trên Windows / PowerShell
 
 Từ thư mục dự án:
@@ -18,6 +25,7 @@ Copy-Item .env.example .env
 
 ```powershell
 .\.venv\Scripts\python.exe -m alembic upgrade head
+# Tùy chọn: chỉ chạy nếu muốn có dữ liệu demo.
 .\.venv\Scripts\python.exe seed.py
 .\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
 ```
@@ -37,7 +45,9 @@ Seed chạy nhiều lần không tạo bản ghi trùng hoặc đặt lại mậ
 | organizer@example.com | Organizer |
 | participant@example.com | Participant |
 
-Mật khẩu demo cho cả ba: `DemoSBT2026!`. Seed có tổ chức, hai sự kiện, người tham gia và một chứng nhận **pending**. Không tạo giao dịch blockchain giả.
+Mật khẩu demo cho cả ba: `DemoSBT2026!`. Seed có tổ chức, hai sự kiện và người tham gia. Người dùng tự liên kết ví trong Hồ sơ, sau đó Organizer cấp chứng nhận với metadata IPFS thật.
+
+Nếu đã chạy seed phiên bản cũ, ví `0x111…` và chứng nhận pending có CID mẫu vẫn nằm trong database; seed mới giữ nguyên dữ liệu đã tồn tại. Đổi sang ví thật trong Hồ sơ và cấp chứng nhận cho một sự kiện mới. Chứng nhận cũ giữ snapshot ví nhận lúc tạo, nên đổi hồ sơ không sửa ví nhận/metadata của record đó.
 
 Để khởi tạo Admin trên database không dùng seed:
 

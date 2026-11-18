@@ -11,8 +11,6 @@ from app.db.migrate import assert_schema_current
 from app.models.models import (
     AttendanceStatus,
     AuditLog,
-    Certificate,
-    CertificateStatus,
     Event,
     EventStatus,
     MemberRole,
@@ -32,10 +30,10 @@ def seed():
         raise SystemExit("Demo seed is disabled in production. Use python -m app.cli create-admin.")
     assert_schema_current()
     with new_session() as db:
-        for email, name, role, wallet in [
-            ("admin@example.com", "Demo Admin", UserRole.ADMIN, None),
-            ("organizer@example.com", "Demo Organizer", UserRole.ORGANIZER, None),
-            ("participant@example.com", "Demo Participant", UserRole.PARTICIPANT, "0x" + "1" * 40),
+        for email, name, role in [
+            ("admin@example.com", "Demo Admin", UserRole.ADMIN),
+            ("organizer@example.com", "Demo Organizer", UserRole.ORGANIZER),
+            ("participant@example.com", "Demo Participant", UserRole.PARTICIPANT),
         ]:
             if not db.scalar(select(User.id).where(User.email == email)):
                 db.add(
@@ -43,7 +41,6 @@ def seed():
                         email=email,
                         full_name=name,
                         role=role,
-                        wallet_address=wallet,
                         password_hash=hash_password(DEMO_PASSWORD),
                     )
                 )
@@ -98,24 +95,14 @@ def seed():
                     attended_at=past.end_date,
                 )
             )
-            db.flush()
-            db.add(
-                Certificate(
-                    event_id=past.id,
-                    recipient_id=participant_user.id,
-                    recipient_wallet=participant_user.wallet_address,
-                    chain_id=get_settings().CHAIN_ID,
-                    token_uri="ipfs://bafybeigdemo/metadata.json",
-                    status=CertificateStatus.PENDING,
-                )
-            )
         db.flush()
         if not db.scalar(select(AuditLog.id).where(AuditLog.action == "demo.seed")):
             db.add(AuditLog(actor_id=organizer.id, action="demo.seed", entity_type="organizations", entity_id=org.id))
         db.commit()
     print("Demo data ready. Accounts: admin@example.com, organizer@example.com, participant@example.com")
     print(f"Local demo password: {DEMO_PASSWORD}")
-    print("Demo certificate is pending; no blockchain transaction is fabricated.")
+    print("Link your own wallet in Profile before issuing certificates with real IPFS metadata.")
+    print("Seed does not assign wallets or create certificates/blockchain transactions.")
 
 
 if __name__ == "__main__":

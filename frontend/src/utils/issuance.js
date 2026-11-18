@@ -120,7 +120,7 @@ export async function mintCertificate(certificate, address, userId, stage) {
     const fees = await context.provider.getFeeData()
     const balance = await context.provider.getBalance(address)
     if (balance < gas * (fees.maxFeePerGas ?? fees.gasPrice ?? 0n))
-      throw new Error('Ví không đủ Sepolia ETH để trả gas.')
+      throw new Error('Ví không đủ ETH để trả gas trên mạng hiện tại.')
     attempt = crypto.randomUUID()
     await api.post(`/certificates/${certificate.id}/mint-claim`, {
       attempt_id: attempt,

@@ -1,0 +1,14 @@
+{
+  "name": "Chứng nhận tham dự Prom",
+  "description": "Chứng nhận đã tham dự sự kiện Prom. Metadata phục vụ demo cấp chứng nhận Soulbound Token.",
+  "attributes": [
+    {
+      "trait_type": "certificate_type",
+      "value": "participation"
+    },
+    {
+      "trait_type": "achievement",
+      "value": "Tham dự sự kiện Prom"
+    }
+  ]
+}

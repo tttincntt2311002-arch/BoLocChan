@@ -379,6 +379,72 @@ for (const operation of ['logout', 'profile', 'wallet']) {
   })
 }
 
+for (const scenario of [
+  {
+    name: 'pending without a transaction',
+    status: 'pending',
+    tx_hash: null,
+    verdict: 'PENDING',
+    hint: 'Tiếp tục cấp',
+  },
+  {
+    name: 'pending with a submitted transaction',
+    status: 'pending',
+    tx_hash: '0x' + 'a'.repeat(64),
+    verdict: 'PENDING',
+    hint: 'Đồng bộ',
+  },
+  {
+    name: 'failed before mint',
+    status: 'failed',
+    tx_hash: null,
+    verdict: 'FAILED',
+    hint: 'thử lại',
+  },
+]) {
+  test(`certificate lookup distinguishes ${scenario.name} from a missing token`, async ({
+    page,
+  }) => {
+    const id = '550e8400-e29b-41d4-a716-446655440000'
+    let blockchainRequests = 0
+    page.on('request', (request) => {
+      if (request.url().includes('/verify/blockchain')) blockchainRequests++
+    })
+    await page.route(`**/verify/certificate/${id}`, (route) =>
+      route.fulfill({
+        json: {
+          is_valid: false,
+          on_chain_verified: false,
+          source: 'database',
+          certificate: {
+            id,
+            event_name: 'Pending certificate workshop',
+            organization_name: 'Test organization',
+            status: scenario.status,
+            tx_hash: scenario.tx_hash,
+            chain_id: 31337,
+            token_id: null,
+            contract_address: '0x' + 'a'.repeat(40),
+          },
+        },
+      }),
+    )
+    await page.goto(`/verify?id=${id}`)
+    await page
+      .getByRole('button', { name: 'Xác minh chứng nhận', exact: true })
+      .click()
+    await expect(page.locator('.verification-verdict')).toHaveText(
+      scenario.verdict,
+    )
+    const result = page.locator('.verification-result')
+    await expect(result).toContainText(`Mã chứng nhận: ${id}`)
+    await expect(result).toContainText('Token ID: Chưa được cấp')
+    await expect(result).toContainText(scenario.hint)
+    await expect(result).not.toContainText(`Token ID: ${id}`)
+    expect(blockchainRequests).toBe(0)
+  })
+}
+
 test('editing the verification input discards a delayed result for the old token', async ({
   page,
 }) => {

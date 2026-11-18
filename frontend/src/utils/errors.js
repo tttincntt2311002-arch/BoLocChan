@@ -18,7 +18,7 @@ export function errorMessage(error) {
     codes.includes('INSUFFICIENT_FUNDS') ||
     /insufficient funds/i.test(error?.message || '')
   )
-    return 'Ví không đủ Sepolia ETH để trả gas.'
+    return 'Ví không đủ ETH để trả gas trên mạng hiện tại.'
   if (codes.includes('CALL_EXCEPTION'))
     return 'Giao dịch bị contract từ chối. Kiểm tra quyền Organizer và chứng nhận đã cấp.'
   if (

@@ -117,6 +117,14 @@ test('admin provisions organizer, organizer manages attendance, participant link
     await expect(
       recipient.getByLabel('Địa chỉ ví Ethereum', { exact: true }),
     ).toHaveValue(recipientWallet)
+    // Leave the collection open before the organizer issues the certificate.
+    await recipient.goto('/my-certificates')
+    await expect(
+      recipient.getByRole('button', { name: 'Làm mới danh sách', exact: true }),
+    ).toBeEnabled()
+    await expect(
+      recipient.locator('article').filter({ hasText: name }),
+    ).toHaveCount(0)
     await page.goto(`/certificates?event=${event.id}`)
     await page
       .getByRole('combobox', { name: 'Người đã tham dự', exact: true })
@@ -138,7 +146,24 @@ test('admin provisions organizer, organizer manages attendance, participant link
     ).json()
     expect(records.total).toBe(1)
     expect(records.items[0].status).toBe('issued')
-    await recipient.goto('/my-certificates')
+    await recipient.bringToFront()
+    await recipient.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect(
+      recipient.locator('article').filter({ hasText: name }),
+    ).toBeVisible()
+    await expect(
+      recipient.locator('article').filter({ hasText: name }),
+    ).toContainText(`Token ID: ${records.items[0].token_id}`)
+    const refreshed = recipient.waitForResponse(
+      (response) =>
+        response.url().includes('/api/v1/certificates?') &&
+        response.request().method() === 'GET' &&
+        response.ok(),
+    )
+    await recipient
+      .getByRole('button', { name: 'Làm mới danh sách', exact: true })
+      .click()
+    await refreshed
     await expect(
       recipient.locator('article').filter({ hasText: name }),
     ).toBeVisible()
@@ -242,12 +267,20 @@ async function wallet(page, options = {}) {
             state.connected = true
             return [state.account]
           }
-          if (
-            method === 'wallet_switchEthereumChain' ||
-            method === 'wallet_addEthereumChain'
-          ) {
+          if (method === 'wallet_switchEthereumChain') {
+            if (state.rejectSwitch)
+              throw Object.assign(new Error('User rejected network switch'), {
+                code: 4001,
+              })
+            if (state.unknownChain)
+              throw Object.assign(new Error('Unknown chain'), { code: 4902 })
             state.chain = params[0].chainId
             state.emit('chainChanged', state.chain)
+            return null
+          }
+          if (method === 'wallet_addEthereumChain') {
+            state.addedChain = params[0]
+            state.unknownChain = false
             return null
           }
           if (method === 'eth_getBalance' && state.noGas) return '0x0'
@@ -461,7 +494,7 @@ test('network switching and wallet events update UI without clearing JWT', async
     localStorage.getItem('sbt_access_token'),
   )
   await page
-    .getByRole('button', { name: 'Chuyển sang Sepolia', exact: true })
+    .getByRole('button', { name: 'Chuyển sang Hardhat Test', exact: true })
     .click()
   await expect(page.locator('.top-actions')).toContainText('Hardhat Test')
   await page.evaluate((address) => {
@@ -474,7 +507,7 @@ test('network switching and wallet events update UI without clearing JWT', async
     window.testWallet.emit('chainChanged', '0x1')
   })
   await expect(
-    page.getByRole('button', { name: 'Chuyển sang Sepolia', exact: true }),
+    page.getByRole('button', { name: 'Chuyển sang Hardhat Test', exact: true }),
   ).toBeVisible()
   await page.evaluate(() => {
     window.testWallet.connected = false
@@ -611,7 +644,7 @@ test('insufficient gas never sends a transaction or marks a certificate issued',
     .getByRole('button', { name: 'Cấp chứng nhận qua MetaMask', exact: true })
     .click()
   await expect(page.getByRole('alert')).toContainText(
-    'Ví không đủ Sepolia ETH để trả gas.',
+    'Ví không đủ ETH để trả gas trên mạng hiện tại.',
   )
   expect(await page.evaluate(() => window.testWallet.sends)).toBe(0)
   const records = await (
@@ -769,6 +802,51 @@ test('a stale wallet refresh cannot reconnect a disconnected account', async ({
       })
     }),
   ).toBe(true)
+})
+
+test('an unknown local network is added using the configured RPC and name', async ({
+  page,
+}) => {
+  await wallet(page, { chain: '0x1', unknownChain: true })
+  await login(page)
+  await page
+    .getByRole('button', { name: 'Chuyển sang Hardhat Test', exact: true })
+    .click()
+  await expect(page.locator('.top-actions')).toContainText('Hardhat Test')
+  const added = await page.evaluate(() => window.testWallet.addedChain)
+  expect(added).toMatchObject({
+    chainId: '0x7a69',
+    chainName: 'Hardhat Test',
+    rpcUrls: ['http://127.0.0.1:18546'],
+    nativeCurrency: { symbol: 'ETH', decimals: 18 },
+  })
+  expect(added).not.toHaveProperty('blockExplorerUrls')
+})
+
+test('rejecting a network switch leaves the wallet on its original network', async ({
+  page,
+}) => {
+  await wallet(page, { chain: '0x1', rejectSwitch: true })
+  await login(page)
+  const token = await page.evaluate(() =>
+    localStorage.getItem('sbt_access_token'),
+  )
+  await page
+    .getByRole('button', { name: 'Chuyển sang Hardhat Test', exact: true })
+    .click()
+  await expect(
+    page.getByText('Bạn đã từ chối yêu cầu trong MetaMask.', { exact: true }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Chuyển sang Hardhat Test', exact: true }),
+  ).toBeVisible()
+  expect(await page.evaluate(() => window.testWallet.chain)).toBe('0x1')
+  expect(
+    await page.evaluate(() => window.testWallet.addedChain),
+  ).toBeUndefined()
+  expect(
+    await page.evaluate(() => localStorage.getItem('sbt_access_token')),
+  ).toBe(token)
 })
 
 test('changing account before broadcast releases the unused mint claim', async ({

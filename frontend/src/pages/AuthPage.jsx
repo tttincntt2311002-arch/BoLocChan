@@ -63,7 +63,7 @@ export default function AuthPage({ mode }) {
         <form onSubmit={submit} aria-busy={busy}>
           {register && <label htmlFor="full-name">Họ và tên
             <input id="full-name" name="name" autoComplete="name" required maxLength={150}
-              value={fullName} onChange={e => setFullName(e.target.value)} disabled={busy} placeholder="Nguyễn Minh Anh"/>
+              value={fullName} onChange={e => setFullName(e.target.value)} disabled={busy} placeholder="Họ và tên"/>
           </label>}
           <label htmlFor="auth-email">Email
             <input id="auth-email" name="email" required type="email" autoComplete="username" maxLength={254}

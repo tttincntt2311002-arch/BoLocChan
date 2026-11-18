@@ -2,6 +2,7 @@
  * Home Page – landing / hero section
  */
 import { Link } from 'react-router-dom'
+import { APP_CONFIG } from '@/utils/constants'
 
 export default function HomePage() {
   return (
@@ -16,7 +17,7 @@ export default function HomePage() {
         </h1>
 
         <p className="text-gray-400 text-lg mb-10 leading-relaxed">
-          Hệ thống cấp phát và xác thực chứng nhận kỹ thuật số trên nền tảng Blockchain Ethereum Sepolia.
+          Hệ thống cấp phát và xác thực chứng nhận kỹ thuật số trên mạng {APP_CONFIG.chainName}.
           Mỗi chứng nhận là một <strong className="text-white">Soulbound Token (SBT)</strong> – không thể chuyển nhượng, không thể giả mạo.
         </p>
 
@@ -33,7 +34,7 @@ export default function HomePage() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-left">
           {[
             { icon: '🔒', title: 'Không thể chuyển nhượng', desc: 'SBT gắn vĩnh viễn với ví của người nhận, đảm bảo tính xác thực.' },
-            { icon: '⛓', title: 'Minh bạch trên Blockchain', desc: 'Mọi chứng nhận đều được ghi nhận trên Ethereum Sepolia, công khai và bất biến.' },
+            { icon: '⛓', title: 'Minh bạch trên Blockchain', desc: `Chứng nhận đã mint được ghi nhận trên ${APP_CONFIG.chainName}, công khai và bất biến.` },
             { icon: '🌐', title: 'Metadata lưu trên IPFS', desc: 'Thông tin chứng nhận được lưu phi tập trung, không phụ thuộc server trung tâm.' },
           ].map(({ icon, title, desc }) => (
             <div key={title} className="card">

@@ -134,6 +134,30 @@ def test_seed_is_idempotent_and_blocked_in_production(ctx, monkeypatch):
         seed()
 
 
+def test_seed_never_assigns_a_wallet_or_creates_placeholder_certificates(ctx):
+    from seed import seed
+
+    # Remove the prelinked test fixture so seed creates a fresh demo account.
+    with ctx.db() as db:
+        db.delete(db.get(User, ctx.users["participant"].id))
+        db.commit()
+    seed()
+    with ctx.db() as db:
+        participant = db.scalar(select(User).where(User.email == "participant@example.com"))
+        assert participant.wallet_address is None
+        assert db.scalar(select(func.count()).select_from(Certificate)) == 0
+    wallet = ctx.users["participant"].wallet_address
+    with ctx.db() as db:
+        participant = db.scalar(select(User).where(User.email == "participant@example.com"))
+        participant.wallet_address = wallet
+        db.commit()
+    seed()
+    with ctx.db() as db:
+        participant = db.scalar(select(User).where(User.email == "participant@example.com"))
+        assert participant.wallet_address == wallet
+        assert db.scalar(select(func.count()).select_from(Certificate)) == 0
+
+
 def test_ipfs_optional_integration_is_authenticated_and_fails_closed(ctx):
     payload = {"name": "Certificate", "description": "Demo", "image": "ipfs://bafyimage"}
     path = "/api/v1/ipfs/upload/metadata"

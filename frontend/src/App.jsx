@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Link,
   NavLink,
@@ -16,7 +16,7 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
-  CircleHelp,
+  Copy,
   FileBadge,
   Fingerprint,
   LayoutDashboard,
@@ -66,6 +66,7 @@ function AppShell({ children }) {
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
   const [loggingOut, setLoggingOut] = useState(false)
+  const accountIdInput = useRef(null)
   const isManager = ['admin', 'organizer'].includes(user?.role)
   const initials = (user?.full_name || '')
     .split(/\s+/)
@@ -81,6 +82,16 @@ function AppShell({ children }) {
     navigate('/login', { replace: true })
     if (revoked) toast.success('Đã đăng xuất')
     else toast('Đã đăng xuất trên trình duyệt. Máy chủ hiện chưa kết nối.')
+  }
+  async function copyAccountId() {
+    try {
+      await navigator.clipboard.writeText(user.id)
+      toast.success('Đã sao chép mã tài khoản')
+    } catch {
+      accountIdInput.current?.focus()
+      accountIdInput.current?.select()
+      toast('Mã tài khoản đã được chọn. Nhấn Ctrl+C để sao chép.')
+    }
   }
   if (!user) return null
   return (
@@ -137,16 +148,6 @@ function AppShell({ children }) {
             </div>
           ))}
         <div className="sidebar-bottom">
-          <div className="help-card">
-            <div className="help-icon">
-              <CircleHelp size={17} />
-            </div>
-            <b>Cần trợ giúp?</b>
-            <p>Đội ngũ của chúng tôi luôn sẵn sàng hỗ trợ.</p>
-            <button onClick={() => navigate('/verify')}>
-              Trung tâm trợ giúp <ArrowRight size={14} />
-            </button>
-          </div>
           <NavLink
             to="/profile"
             className={({ isActive }) =>
@@ -160,6 +161,25 @@ function AppShell({ children }) {
             <div>
               <b>{user.full_name}</b>
               <small>{roleLabel(user.role)}</small>
+              <div className="user-account-id">
+                <span aria-hidden="true">ID:</span>
+                <input
+                  ref={accountIdInput}
+                  aria-label="Mã tài khoản của bạn"
+                  readOnly
+                  value={user.id}
+                  title={user.id}
+                  onFocus={(event) => event.target.select()}
+                />
+                <button
+                  type="button"
+                  aria-label="Sao chép mã tài khoản"
+                  title="Sao chép mã tài khoản"
+                  onClick={copyAccountId}
+                >
+                  <Copy size={12} />
+                </button>
+              </div>
             </div>
             <button
               aria-label="Đăng xuất"
@@ -336,7 +356,7 @@ function Landing() {
             </span>
             <div>
               <b>Xác minh on-chain</b>
-              <small>Ethereum Sepolia</small>
+              <small>{APP_CONFIG.chainName}</small>
             </div>
             <Check size={17} />
           </div>

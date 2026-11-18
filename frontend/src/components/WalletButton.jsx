@@ -2,6 +2,7 @@ import toast from 'react-hot-toast'
 import useWalletStore from '@/hooks/useWalletStore'
 import { formatAddress } from '@/utils/web3'
 import { errorMessage } from '@/utils/errors'
+import { APP_CONFIG } from '@/utils/constants'
 
 export default function WalletButton() {
   const {
@@ -35,7 +36,7 @@ export default function WalletButton() {
         {isConnecting
           ? 'Đang kết nối…'
           : isWrongNetwork
-            ? 'Chuyển sang Sepolia'
+            ? `Chuyển sang ${APP_CONFIG.chainName}`
             : isConnected
               ? formatAddress(address)
               : 'Kết nối MetaMask'}

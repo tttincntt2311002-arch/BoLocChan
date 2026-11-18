@@ -88,6 +88,14 @@ def main():
                         )
                         tokens[actor] = {"Authorization": "Bearer " + result["access_token"]}
                     user = check("GET", "/api/v1/users/me", 200, headers=tokens["participant"])
+                    assert user["wallet_address"] is None
+                    check(
+                        "PUT",
+                        "/api/v1/users/me/wallet",
+                        200,
+                        headers=tokens["participant"],
+                        json={"wallet_address": "0x" + "4" * 40},
+                    )
                     check("PATCH", "/api/v1/users/me", 422, headers=tokens["participant"], json={"role": "admin"})
                     check("GET", "/api/v1/users", 403, headers=tokens["participant"])
                     org = check("GET", "/api/v1/organizations", 200, headers=tokens["organizer"])["items"][0]
