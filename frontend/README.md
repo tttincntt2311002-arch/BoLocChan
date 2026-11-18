@@ -55,7 +55,7 @@ Các bước dưới đây dùng blockchain local, không tốn ETH thật. Meta
    const [admin] = await ethers.getSigners();
    const deployment = require('./deployments/localhost.json');
    const certificate = await ethers.getContractAt('SoulboundCertificate', deployment.contractAddress);
-   const organizerAddress = '0xC016184d87c5D0e4e74a21b3ab935C42525a4BB2'; // thay bằng địa chỉ ví của bạn
+   const organizerAddress = '0x2eB91301804B078783E5795Cdde5eD915ae45307'; // thay bằng địa chỉ ví của bạn
    await (await certificate.grantRole(await certificate.ORGANIZER_ROLE(), organizerAddress)).wait();
    await (await admin.sendTransaction({to: organizerAddress, value: ethers.parseEther('10')})).wait();
    deployment.contractAddress; // sao chép địa chỉ contract thực tế vào cả hai cấu hình
